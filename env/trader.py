@@ -4,7 +4,7 @@ import math
 
 from time import time
 from enum import Enum
-from position import Position
+from env.position import Position
 
 
 class ActionCode(Enum):

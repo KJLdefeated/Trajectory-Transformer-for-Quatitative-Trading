@@ -5,8 +5,8 @@ import pandas as pd
 import numpy as np
 import math
 
-from trader import Trader
-from document import Stock, Future
+from env.trader import Trader
+from env.document import Stock, Future
 from sklearn.preprocessing import StandardScaler
 
 
