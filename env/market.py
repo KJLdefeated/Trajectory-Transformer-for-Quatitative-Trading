@@ -4,6 +4,9 @@
 import pandas as pd
 import numpy as np
 import math
+import os
+import csv
+from datetime import datetime
 
 from env.trader import Trader
 from env.document import Stock, Future
@@ -15,7 +18,9 @@ class Market(object):
     Running = 0
     Done = -1
 
-    def __init__(self, codes, start_date="2008-01-01", end_date="2018-01-01", **options):
+    def __init__(self, codes, start_date="2008-01-01", end_date="2018-01-01", data_path = 'dataset/',**options):
+        
+        self.data_path = data_path
 
         # Initialize codes.
         self.codes = codes
@@ -121,24 +126,50 @@ class Market(object):
         if not self.state_code_count:
             raise ValueError("Codes cannot be empty.")
         for code in self.state_codes:
-            if not self.doc_class.exist_in_db(code):
+            if not os.path.exists(self.data_path + "stock_data_{}.csv".format(code)):
                 raise ValueError("Code: {} not exists in database.".format(code))
+            #if not self.doc_class.exist_in_db(code):
+            #    raise ValueError("Code: {} not exists in database.".format(code))
+    
+    def _load_csv_data(self, code):
+        # Data preprocessing
+        data = []
+        with open("dataset/" + "stock_data_{}.csv".format(code), newline='') as csvfile:
+            reader = csv.reader(csvfile)
+            for row in reader:
+                data.append(row)
+        instrument_dicts = []
+        for row in data[1:]:
+            instrument_dict = {}
+            y, m, d = map(int, row[0].split('/'))
+            instrument_dict['date'] = y * 365 + m * 31 + d
+            instrument_dict['data'] = []
+            flag = False
+            for i in range(1, 9):
+                if row[i] == '--':
+                    flag = True
+                    break
+                instrument_dict['data'].append(float(row[i].replace(',', '').replace('X','')))
+            if flag:
+                continue
+            instrument_dicts.append(instrument_dict)
+        return instrument_dicts
 
     def _init_data_frames(self, start_date, end_date):
         # Remove invalid codes first.
         self._validate_codes()
         # Init columns and data set.
-        columns, dates_set = ['open', 'high', 'low', 'close', 'volume'], set()
+        columns, dates_set = ['volume', 'value', 'open', 'high', 'low', 'close', 'change', 'trades'], set()
         # Load data.
         for index, code in enumerate(self.state_codes):
             # Load instrument docs by code.
-            instrument_docs = self.doc_class.get_k_data(code, start_date, end_date)
+            instrument_dicts = self._load_csv_data(code)
             # Init instrument dicts.
-            instrument_dicts = [instrument.to_dic() for instrument in instrument_docs]
+            # instrument_dicts = [instrument.to_dic() for instrument in instrument_docs]
             # Split dates.
-            dates = [instrument[1] for instrument in instrument_dicts]
+            dates = [instrument_dict['date'] for instrument_dict in instrument_dicts]
             # Split instruments.
-            instruments = [instrument[2:] for instrument in instrument_dicts]
+            instruments = [instrument_dict['data'] for instrument_dict in instrument_dicts]
             # Update dates set.
             dates_set = dates_set.union(dates)
             # Build origin and scaled frames.
@@ -153,11 +184,11 @@ class Market(object):
         # Init date iter.
         self.dates = sorted(list(dates_set))
         # Rebuild index.
-        for code in self.state_codes:
-            origin_frame = self.origin_frames[code]
-            scaled_frame = self.scaled_frames[code]
-            self.origin_frames[code] = origin_frame.reindex(self.dates, method='bfill')
-            self.scaled_frames[code] = scaled_frame.reindex(self.dates, method='bfill')
+        #for code in self.state_codes:
+        #    origin_frame = self.origin_frames[code]
+        #    scaled_frame = self.scaled_frames[code]
+        #    self.origin_frames[code] = origin_frame.reindex(self.dates, method='bfill')
+        #    self.scaled_frames[code] = scaled_frame.reindex(self.dates, method='bfill')
 
     def _init_env_data(self):
         if not self.use_sequence:

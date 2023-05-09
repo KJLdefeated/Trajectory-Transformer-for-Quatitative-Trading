@@ -7,7 +7,7 @@ from datetime import datetime
 
 DATETIME_NOW = datetime.now().strftime("%Y%m%d%H%M%S")
 
-LOGS_DIR = '\logs'
+LOGS_DIR = 'logs'
 
 def generate_market_logger(model_name):
 
