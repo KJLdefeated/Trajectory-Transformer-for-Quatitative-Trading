@@ -10,6 +10,7 @@ env = gym.make('forex-v0', frame_bound=(50, 100), window_size=10)
 observation = env.reset()
 while True:
     action = env.action_space.sample()
+    print(observation)
     observation, reward, done, info = env.step(action)
     # env.render()
     if done:

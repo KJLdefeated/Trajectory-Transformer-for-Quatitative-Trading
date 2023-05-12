@@ -5,3 +5,10 @@ torch
 transformers==4.5.1
 wandb==0.9.1
 tensorboard
+pyprind
+tensorflow
+gin-config
+gym
+tqdm
+blosc
+git+https://github.com/google/dopamine.git
