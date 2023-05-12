@@ -75,7 +75,7 @@ class Actor(nn.Module):
     def __init__(self, hidden_size, num_inputs, action_space):
         super(Actor, self).__init__()
         self.action_space = action_space
-        num_outputs = action_space.shape[0]
+        num_outputs = action_space
 
         ########## YOUR CODE HERE (5~10 lines) ##########
         # Construct your own actor network
@@ -95,7 +95,7 @@ class Actor(nn.Module):
         x = F.relu(x)
         x = self.linearlayer3(x)
         x = F.relu(x)
-        action = torch.tanh(self.outputlayer(x))
+        action = self.outputlayer(x)
         return action
         ########## END OF YOUR CODE ##########
 
@@ -103,7 +103,7 @@ class Critic(nn.Module):
     def __init__(self, hidden_size, num_inputs, action_space):
         super(Critic, self).__init__()
         self.action_space = action_space
-        num_outputs = action_space.shape[0]
+        num_outputs = action_space
 
         ########## YOUR CODE HERE (5~10 lines) ##########
         # Construct your own critic network
@@ -129,7 +129,7 @@ class Critic(nn.Module):
         
 
 class DDPG(object):
-    def __init__(self, num_inputs, action_space, gamma=0.995, tau=0.0005, hidden_size=128, lr_a=1e-4, lr_c=1e-3, lr_a_decay=0.995, lr_c_decay=0.995, step_size=100):
+    def __init__(self, num_inputs, action_space, env, epsilon, gamma=0.995, tau=0.0005, hidden_size=128, lr_a=1e-4, lr_c=1e-3, lr_a_decay=0.995, lr_c_decay=0.995, step_size=100):
 
         self.num_inputs = num_inputs
         self.action_space = action_space
@@ -147,24 +147,52 @@ class DDPG(object):
 
         self.gamma = gamma
         self.tau = tau
+        self.epsilon = epsilon
+        self.env = env
 
         hard_update(self.actor_target, self.actor) 
         hard_update(self.critic_target, self.critic)
 
+    def get_stock_code_and_action(self, a, use_greedy=False, use_prob=False):
+        # Reshape a.
+        if not use_greedy:
+            a = a.reshape((-1,))
+            # Calculate action index depends on prob.
+            if use_prob:
+                # Generate indices.
+                a_indices = np.arange(a.shape[0])
+                # Get action index.
+                action_index = np.random.choice(a_indices, p=a)
+            else:
+                # Get action index.
+                action_index = np.argmax(a)
+        else:
+            if use_prob:
+                # Calculate action index
+                if np.random.uniform() < self.epsilon:
+                    action_index = np.floor(a).astype(int)
+                else:
+                    action_index = np.random.randint(0, self.action_space)
+            else:
+                # Calculate action index
+                action_index = np.floor(a).astype(int)
+
+        # Get action
+        action = action_index % 3
+        # Get stock index
+        stock_index = np.floor(action_index / 3).astype(np.int)
+        # Get stock code.
+        stock_code = self.env.codes[stock_index]
+
+        return stock_code, action, action_index
 
     def select_action(self, state, action_noise=None):
         self.actor.eval()
         mu = self.actor((Variable(state)))
         mu = mu.data
-
-        ########## YOUR CODE HERE (3~5 lines) ##########
-        # Add noise to your action for exploration
-        # Clipping might be needed 
         noise = [0.0] if action_noise is None else action_noise.noise()
         noise = torch.FloatTensor(noise)
-        return torch.clamp(mu + noise, min=-1.0, max=1.0)
-        ########## END OF YOUR CODE ##########
-
+        return torch.clamp(mu + noise, min=0, max=1.0)
 
     def update_parameters(self, batch):
         state_batch = Variable(torch.cat([b.state for b in batch]))
@@ -220,7 +248,7 @@ class DDPG(object):
         if critic_path is not None: 
             self.critic.load_state_dict(torch.load(critic_path))
 
-def train(env, lr_a_, lr_c_, lr_a_decay_, lr_c_decay_, noise_scale_, batch_size_ , env_name = 'Stock_Market'):   
+def train(env: Market, lr_a_, lr_c_, lr_a_decay_, lr_c_decay_, noise_scale_, batch_size_ , env_name = 'Stock_Market'):   
     # Define a tensorboard writer
     writer = SummaryWriter("./tb_record_3/DDPG/train-{}-{}".format(lr_a_, lr_c_))
 
@@ -239,6 +267,7 @@ def train(env, lr_a_, lr_c_, lr_a_decay_, lr_c_decay_, noise_scale_, batch_size_
     noise_scale = noise_scale_ #0.3
     replay_size = 100000
     batch_size = batch_size_ #128
+    epsilon = 0.03
     updates_per_step = 1
     print_freq = 20
     ewma_reward = 0
@@ -248,8 +277,18 @@ def train(env, lr_a_, lr_c_, lr_a_decay_, lr_c_decay_, noise_scale_, batch_size_
     updates = 0
 
     
-    agent = DDPG(env.observation_space.shape[0], env.action_space, gamma, tau, hidden_size, lr_a, lr_c, lr_a_decay, lr_c_decay)
-    ounoise = OUNoise(env.action_space.shape[0])
+    agent = DDPG(num_inputs = env.data_dim,
+                 action_space = env.trader.action_space, 
+                 env = env, 
+                 epsilon= epsilon,
+                 gamma = gamma, 
+                 tau = tau, 
+                 hidden_size = hidden_size,
+                lr_a= lr_a, 
+                lr_c= lr_c, 
+                lr_a_decay= lr_a_decay, 
+                lr_c_decay = lr_c_decay)
+    ounoise = OUNoise(env.trader.action_space)
     memory = ReplayMemory(replay_size)
     
     for i_episode in range(num_episodes):
@@ -270,7 +309,8 @@ def train(env, lr_a_, lr_c_, lr_a_decay_, lr_c_decay_, noise_scale_, batch_size_
             # 3. Update the actor and the critic
             total_numsteps+=1
             action = agent.select_action(state, ounoise)
-            next_state, reward, done, _ = env.step(action.numpy()[0])
+            code, action, a_index= agent.get_stock_code_and_action(action, use_greedy=False, use_prob=True)
+            next_state, reward, done, _ = env.forward(code, action)
             next_state = torch.Tensor([next_state])
             memory.push(state, action, torch.Tensor([done]), next_state, torch.Tensor([reward]))
             if len(memory) >= batch_size and total_numsteps%updates_per_step == 0:
@@ -280,7 +320,7 @@ def train(env, lr_a_, lr_c_, lr_a_decay_, lr_c_decay_, noise_scale_, batch_size_
                 act_loss.append(a_loss)
             episode_reward += reward
             state = next_state
-            if done:
+            if done == env.Done:
                 break
             ########## END OF YOUR CODE ########## 
         
