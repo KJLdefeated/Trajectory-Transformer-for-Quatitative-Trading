@@ -1,6 +1,7 @@
 .vscode
 .ipynb_checkpoints
 .vs
+.DS_Store
 heightmap/tmp/test
 Unity_Hydraulic_Erosion/Library
 Unity_Hydraulic_Erosion/Temp
