@@ -40,7 +40,6 @@ vgg
 discriminator/datasets
 
 *.zip
-datasets
 
 *.png
 Untitled*Folder
