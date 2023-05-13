@@ -24,6 +24,12 @@ import torch.optim as optim
 from torch.optim.lr_scheduler import LambdaLR
 from torch.utils.data.dataloader import DataLoader
 
+import gym
+import gym_anytrading
+from gym_anytrading.envs import TradingEnv, ForexEnv, StocksEnv, Actions, Positions 
+from gym_anytrading.datasets import FOREX_EURUSD_1H_ASK, STOCKS_GOOGL
+import matplotlib.pyplot as plt
+
 logger = logging.getLogger(__name__)
 
 from utils import sample
