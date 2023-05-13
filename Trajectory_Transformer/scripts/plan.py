@@ -1,10 +1,15 @@
 import json
 import pdb
+import os
+import sys
 from os.path import join
 import gym
 import gym_anytrading
+import numpy as np
 from gym_anytrading.envs import TradingEnv, ForexEnv, StocksEnv, Actions, Positions 
 from gym_anytrading.datasets import FOREX_EURUSD_1H_ASK, STOCKS_GOOGL
+parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, parent_dir)
 import trajectory.utils as utils
 import trajectory.datasets as datasets
 from trajectory.search import (
@@ -39,7 +44,7 @@ gpt, gpt_epoch = utils.load_model(args.logbase, args.dataset, args.gpt_loadpath,
 #######################
 
 env = gym.make(args.dataset, frame_bound=(50, 100), window_size=10)
-renderer = utils.make_renderer(args)
+#renderer = utils.make_renderer(args)
 timer = utils.timer.Timer()
 
 discretizer = dataset.discretizer
@@ -48,7 +53,7 @@ observation_dim = dataset.observation_dim
 action_dim = dataset.action_dim
 
 value_fn = lambda x: discretizer.value_fn(x, args.percentile)
-preprocess_fn = datasets.get_preprocess_fn(env.name)
+#preprocess_fn = datasets.get_preprocess_fn(env.name)
 
 #######################
 ###### main loop ######
@@ -63,10 +68,11 @@ rollout = [observation.copy()]
 ## previous (tokenized) transitions for conditioning transformer
 context = []
 
-T = env.max_episode_steps
+T = 1000000
 for t in range(T):
 
-    observation = preprocess_fn(observation)
+    #observation = preprocess_fn(observation)
+    observation = observation.reshape(-1)
 
     if t % args.plan_freq == 0:
         ## concatenate previous transitions and current observations to input to model
@@ -90,18 +96,18 @@ for t in range(T):
     action = extract_actions(sequence_recon, observation_dim, action_dim, t=0)
 
     ## execute action in environment
-    next_observation, reward, terminal, _ = env.step(action)
+    next_observation, reward, terminal, info = env.step(np.argmax(action))
 
     ## update return
     total_reward += reward
-    score = env.get_normalized_score(total_reward)
+    #score = env.get_normalized_score(total_reward)
 
     ## update rollout observations and context transitions
     rollout.append(next_observation.copy())
     context = update_context(context, discretizer, observation, action, reward, args.max_context_transitions)
 
     print(
-        f'[ plan ] t: {t} / {T} | r: {reward:.2f} | R: {total_reward:.2f} | score: {score:.4f} | '
+        f'[ plan ] t: {t} / {T} | r: {reward:.2f} | R: {total_reward:.2f} '
         f'time: {timer():.2f} | {args.dataset} | {args.exp_name} | {args.suffix}\n'
     )
 
@@ -114,11 +120,13 @@ for t in range(T):
     #    ## save rollout thus far
     #    renderer.render_rollout(join(args.savepath, f'rollout.mp4'), rollout, fps=80)
 
-    if terminal: break
+    if terminal: 
+        print(info)
+        break
 
     observation = next_observation
 
 ## save result as a json file
 json_path = join(args.savepath, 'rollout.json')
-json_data = {'score': score, 'step': t, 'return': total_reward, 'term': terminal, 'gpt_epoch': gpt_epoch}
+json_data = {'step': t, 'return': total_reward, 'term': terminal, 'gpt_epoch': gpt_epoch}
 json.dump(json_data, open(json_path, 'w'), indent=2, sort_keys=True)

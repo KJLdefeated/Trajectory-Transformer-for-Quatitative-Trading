@@ -2,11 +2,17 @@ import os
 import numpy as np
 import torch
 import pdb
+import sys
+
+parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+sys.path.insert(0, parent_dir)
 
 import trajectory.utils as utils
 import trajectory.datasets as datasets
 from trajectory.models.transformers import GPT
 
+os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+os.environ["CUDA_VISIBLE_DEVICES"] = '2'
 
 class Parser(utils.Parser):
     dataset: str = 'forex-v0'
@@ -31,7 +37,7 @@ dataset_config = utils.Config(
     savepath=(args.savepath, 'data_config.pkl'),
     env=args.dataset,
     N=args.N,
-    penalty=args.termination_penalty,
+    penalty=None,
     sequence_length=sequence_length,
     step=args.step,
     discount=args.discount,
@@ -104,7 +110,8 @@ trainer = trainer_config()
 #######################
 
 ## scale number of epochs to keep number of updates constant
-n_epochs = int(1e6 / len(dataset) * args.n_epochs_ref)
+#n_epochs = int(1e6 / len(dataset) * args.n_epochs_ref)
+n_epochs = 3000
 save_freq = int(n_epochs // args.n_saves)
 
 for epoch in range(n_epochs):
