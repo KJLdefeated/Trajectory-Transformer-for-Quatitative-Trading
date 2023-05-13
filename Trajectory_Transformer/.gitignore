@@ -1,0 +1,17 @@
+.ipynb_checkpoints/
+__pycache__/
+*.egg-info
+.DS_Store
+bin/
+
+logs/*
+data/*
+slurm/config.sh
+slurm/*sandbox*
+*.img
+slurm-*.out
+*.png
+*.pdf
+*.pkl
+mjkey.txt
+azure/fuse.cfg
