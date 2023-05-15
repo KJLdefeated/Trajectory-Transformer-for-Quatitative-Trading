@@ -17,9 +17,9 @@ class PolicyNet(nn.Module):
     def __init__(self):
         super(PolicyNet, self).__init__()
 
-        self.fc1 = nn.Linear(48, 128)
+        self.fc1 = nn.Linear(4, 128)
         self.fc2 = nn.Linear(128, 128)
-        self.fc3 = nn.Linear(128, 2)  # Prob of Left
+        self.fc3 = nn.Linear(128, 2) 
 
     def forward(self, x):
         x = F.relu(self.fc1(x))
@@ -47,7 +47,7 @@ total_rewards = []
 
 def train(env):
     agent = Agent(env)
-    episode = 5000
+    episode = 10000
     rewards = []
     for e in range(episode):
         state = env.reset()
@@ -62,7 +62,7 @@ def train(env):
         ep_rew = 0
 
         while True:
-            probs = agent.policy_net(Tensor(state).reshape(48))
+            probs = agent.policy_net(Tensor(state).reshape(4))
 
             m = Categorical(logits=probs)
             action = m.sample()
@@ -84,7 +84,7 @@ def train(env):
                 # episode_durations.append(t + 1)
                 # plot_durations()
                 rewards.append(ep_rew)
-                print("{}: rew: {}, tot_profit: {}".format(e, ep_rew, env._total_profit))
+                print("{}: rew: {}".format(e, ep_rew))
                 break
 
         if e > 0 and e % agent.batch_size == 0:
@@ -120,39 +120,40 @@ def train(env):
             action_pool = []
             reward_pool = []
             steps = 0
-            torch.save(agent.policy_net.state_dict(), "./Tables/PG.pt")
+            torch.save(agent.policy_net.state_dict(), "./Tables/PG_cartpole.pt")
     total_rewards.append(rewards)
 
 
 
 def test(env):
     rewards = []
-    profits = []
+    #profits = []
     testing_agent = Agent(env)
-    testing_agent.policy_net.load_state_dict(torch.load("./Tables/PG.pt"))
+    testing_agent.policy_net.load_state_dict(torch.load("./Tables/PG_cartpole.pt"))
     for _ in range(30):
         state = env.reset()
         reward = 0
         while True:
-            probs = testing_agent.policy_net(Tensor(state).reshape(48))
+            probs = testing_agent.policy_net(Tensor(state).reshape(4))
             m = Categorical(logits=probs)
             action = m.sample()
             next_state, temp, done, _ = env.step(action.item())
             reward = reward + temp
             if done:
                 rewards.append(reward)
-                profits.append(env._total_profit)
+                #profits.append(env._total_profit)
                 #print(env._total_profit)
                 break
             state = next_state
 
     print(f"reward: {np.mean(rewards)}")
-    print(f"profit: {np.mean(profits)}")
-    print(env.max_possible_profit())
+    #print(f"profit: {np.mean(profits)}")
+    #print(env.max_possible_profit())
 
 
 if __name__ == "__main__":
-    env = buildEnv.createEnv(2330)        
+    env = gym.make('CartPole-v0') 
+    #print(env.shape)  
     os.makedirs("./Tables", exist_ok=True)
 
     # training section:
@@ -163,4 +164,4 @@ if __name__ == "__main__":
     env.close()
 
     os.makedirs("./Rewards", exist_ok=True)
-    np.save("./Rewards/PG_rewards.npy", np.array(total_rewards))
+    np.save("./Rewards/PG_cartpole_rewards.npy", np.array(total_rewards))
