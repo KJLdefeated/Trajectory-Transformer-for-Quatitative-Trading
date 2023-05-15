@@ -14,28 +14,65 @@ def my_process_data(env):
     return prices, signal_features
 
 def my_calculate_reward(self, action):
-    step_reward = -1
-
+    
+    '''
+    # this is the original one
+    step_reward = 0
     trade = False
     if ((action == Actions.Buy.value and self._position == Positions.Short) or
         (action == Actions.Sell.value and self._position == Positions.Long)):
         trade = True
+    '''
+    '''
+    for i in range(13,3,-2):
+        ismin, ismax = self.knowIs(i)
+        if(ismax and action == Actions.Buy.value):
+            return (i*-5 + 15)/10
+        if(ismin and action == Actions.Sell.value):
+            return (-5 * i + 15)/10
+    '''
+    '''  
     if trade:
         current_price = self.prices[self._current_tick]
         last_trade_price = self.prices[self._last_trade_tick]
         price_diff = current_price - last_trade_price
-        step_reward = 5
-        if action == Actions.Sell.value:
-            step_reward += price_diff
+        #step_reward = 0.5
+        #if action == Actions.Sell.value:
+        #    step_reward += price_diff
+        #if action == Actions.Sell.value and ismax:
+        #    step_reward += 3
+        #if action == Actions.Buy.value and ismin:
+        #    step_reward += 3
         #else:
         #    step_reward -= price_diff
-
+    
+    
+    
     return step_reward
+    '''
+
+    if action == Actions.Sell.value and self._current_tick!= self._end_tick:
+        return self.prices[self._current_tick] - self.prices[self._current_tick+1]
+    if action == Actions.Buy.value and self._current_tick!= self._end_tick:
+        return self.prices[self._current_tick+1] - self.prices[self._current_tick]
+    return 0
 
 
 class MyStocksEnv(StocksEnv):
     _process_data = my_process_data
     _calculate_reward = my_calculate_reward
+    def knowIs(self, window):
+        ismax = False
+        ismin = False 
+        if self._current_tick < self._end_tick-window/2:
+            ismax = True
+            ismin = True
+            for i in range(int(-window/2),int(window/2+1)):
+                if(self.prices[self._current_tick + i] > self.prices[self._current_tick]):
+                    ismax = False
+                if(self.prices[self._current_tick + i] < self.prices[self._current_tick]):
+                    ismin = False
+        return ismax, ismin
 
 
 def createEnv(stock_no, window_size = 12, frame_bounds = (12, 1200)):
