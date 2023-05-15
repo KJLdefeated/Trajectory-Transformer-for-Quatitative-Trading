@@ -39,11 +39,11 @@ class MyStocksEnv(StocksEnv):
 
 
 def createEnv(stock_no, window_size = 12, frame_bounds = (12, 1200)):
-    csv_name = 'dataset\stock_data_' + str(stock_no) + '.csv'
+    csv_name = './dataset/stock_data_' + str(stock_no) + '.csv'
     data = pd.read_csv(csv_name)
     read_df = pd.DataFrame(data)
     read_df = read_df.loc[::-1].reset_index(drop=True)
     env = MyStocksEnv(df = read_df, window_size = window_size, frame_bound = frame_bounds)
     return env
-
-createEnv(2330)
+if __name__ == "__main__":
+    createEnv(2330)

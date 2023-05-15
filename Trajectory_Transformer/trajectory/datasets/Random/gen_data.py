@@ -6,13 +6,13 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pickle
 
-quat_type = "forex-v0"
-env = gym.make('forex-v0', frame_bound=(50, 100), window_size=10)
+quat_type = "stocks-v0"
+env = gym.make('stocks-v0', frame_bound=(50, 100), window_size=10)
 # env = gym.make('stocks-v0', frame_bound=(50, 100), window_size=10)
 
 action_dim = env.action_space.n
 
-episode = 10
+episode = 100
 T = 0
 episode_data = {}
 for k in ['observations', 'next_observations', 'actions', 'rewards', 'terminals']:

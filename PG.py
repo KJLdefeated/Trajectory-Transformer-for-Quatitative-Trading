@@ -8,6 +8,7 @@ import numpy as np
 import gym
 import random
 from collections import deque
+from torch.distributions import Categorical
 import os
 from tqdm import tqdm
 import buildEnv
@@ -18,7 +19,7 @@ class PolicyNet(nn.Module):
 
         self.fc1 = nn.Linear(48, 128)
         self.fc2 = nn.Linear(128, 128)
-        self.fc3 = nn.Linear(128, 1)  # Prob of Left
+        self.fc3 = nn.Linear(128, 2)  # Prob of Left
 
     def forward(self, x):
         x = F.relu(self.fc1(x))
@@ -41,13 +42,14 @@ class Agent():
 
         self.optimizer = torch.optim.RMSprop(self.policy_net.parameters(), lr=learning_rate)
 
+
 total_rewards = []
 
 def train(env):
     agent = Agent(env)
     episode = 1000
     rewards = []
-    for e in tqdm(range(episode)):
+    for e in range(episode):
         state = env.reset()
         state = torch.from_numpy(state).float()
         state = Variable(state)
@@ -57,24 +59,19 @@ def train(env):
         action_pool = []
         reward_pool = []
         steps = 0
+        ep_rew = 0
 
         while True:
             probs = agent.policy_net(Tensor(state).reshape(48))
 
-            m = Bernoulli(probs)
+            m = Categorical(logits=probs)
             action = m.sample()
-            
-            action = action.data.numpy().astype(int)[0]
-
-            next_state, reward, done, _ = env.step(action)
+            next_state, reward, done, _ = env.step(action.item())
             # env.render(mode='rgb_array')
 
-            # To mark boundarys between episodes
-            if done:
-                reward = 0
-
+            ep_rew += reward
             state_pool.append(state)
-            action_pool.append(float(action))
+            action_pool.append((m.log_prob(action), probs))
             reward_pool.append(reward)
 
             state = next_state
@@ -86,10 +83,8 @@ def train(env):
             if done:
                 # episode_durations.append(t + 1)
                 # plot_durations()
-                rewards.append(env._total_reward)
-                print("!")
-                print(env._total_reward)
-                print(env._total_profit)
+                rewards.append(ep_rew)
+                print("rew: {}, tot_profit: {}".format(ep_rew, env._total_profit))
                 break
 
         if e > 0 and e % agent.batch_size == 0:
@@ -113,12 +108,10 @@ def train(env):
 
             for i in range(steps):
                 state = state_pool[i]
-                action = Variable(torch.FloatTensor([action_pool[i]]))
+                action = action_pool[i]
                 reward = reward_pool[i]
 
-                probs = agent.policy_net(Tensor(state).reshape(48))
-                m = Bernoulli(probs)
-                loss = -m.log_prob(action) * reward  # Negtive score function x reward
+                loss = -action[0] * reward  # Negtive score function x reward
                 loss.backward()
 
             agent.optimizer.step()

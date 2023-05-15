@@ -1,0 +1,65 @@
+{
+    "N": 20,
+    "action_weight": 5,
+    "add_extras": {
+        "_type": "python_object (type = method)",
+        "_value": "gASVHgMAAAAAAACMCGJ1aWx0aW5zlIwHZ2V0YXR0cpSTlIwIX19tYWluX1+UjAZQYXJzZXKUk5QpgZR9lCiMCmJhdGNoX3NpemWUS0CMB25fbGF5ZXKUSwSMBHN0ZXCUSwGMCHNldF9zZWVklGgCaAZoC4aUUpSMCmF0dG5fcGRyb3CURz+5mZmZmZmajBN0ZXJtaW5hdGlvbl9wZW5hbHR5lEqc////jAplbWJkX3Bkcm9wlEc/uZmZmZmZmowHbG9nYmFzZZSMBWxvZ3MvlIwKZ2V0X2NvbW1pdJRoAmgGaBOGlFKUjAdkYXRhc2V0lIwLc3RvY2tzLXYwX3KUjAVta2RpcpRoAmgGaBiGlFKUjAxuX2Vwb2Noc19yZWaUSzKMAU6USxSMBmNvbW1pdJSMLTAwODdiMGYyNWYxNzUxNjA1YTg3NWVhNjczZWIwMzA0NzAzYjQ3ZmUgbWFpbpSMC2Rpc2NyZXRpemVylIwTUXVhbnRpbGVEaXNjcmV0aXplcpSMBm5faGVhZJRLBIwEc2VlZJRLKowKYWRkX2V4dHJhc5RoAmgGaCOGlFKUjAhscl9kZWNheZSIjBpzdWJzYW1wbGVkX3NlcXVlbmNlX2xlbmd0aJRLCowGY29uZmlnlIwOY29uZmlnLm9mZmxpbmWUjAtyZXNpZF9wZHJvcJRHP7mZmZmZmZqMDXJld2FyZF93ZWlnaHSUSwGMCHNhdmVwYXRolIwabG9ncy9zdG9ja3MtdjBfci9ncHQvYXp1cmWUjAduX3NhdmVzlEsDjBFnZW5lcmF0ZV9leHBfbmFtZZRoAmgGaC+GlFKUjAx2YWx1ZV93ZWlnaHSUSwGMCGRpc2NvdW50lEc/764UeuFHrowGbl9lbWJklEsgjAlzYXZlX2RpZmaUaAJoBmg1hpRSlIwGZGV2aWNllIwEY3VkYZSMCGV4cF9uYW1llIwJZ3B0L2F6dXJllIwNYWN0aW9uX3dlaWdodJRLBYwLcmVhZF9jb25maWeUaAJoBmg9hpRSlIwNbGVhcm5pbmdfcmF0ZZRHP0OpKjBVMmF1YmgjhpRSlC4="
+    },
+    "attn_pdrop": 0.1,
+    "batch_size": 64,
+    "commit": "0087b0f25f1751605a875ea673eb0304703b47fe main",
+    "config": "config.offline",
+    "dataset": "stocks-v0_r",
+    "device": "cuda",
+    "discount": 0.99,
+    "discretizer": "QuantileDiscretizer",
+    "embd_pdrop": 0.1,
+    "exp_name": "gpt/azure",
+    "generate_exp_name": {
+        "_type": "python_object (type = method)",
+        "_value": "gASVHgMAAAAAAACMCGJ1aWx0aW5zlIwHZ2V0YXR0cpSTlIwIX19tYWluX1+UjAZQYXJzZXKUk5QpgZR9lCiMCmJhdGNoX3NpemWUS0CMB25fbGF5ZXKUSwSMBHN0ZXCUSwGMCHNldF9zZWVklGgCaAZoC4aUUpSMCmF0dG5fcGRyb3CURz+5mZmZmZmajBN0ZXJtaW5hdGlvbl9wZW5hbHR5lEqc////jAplbWJkX3Bkcm9wlEc/uZmZmZmZmowHbG9nYmFzZZSMBWxvZ3MvlIwKZ2V0X2NvbW1pdJRoAmgGaBOGlFKUjAdkYXRhc2V0lIwLc3RvY2tzLXYwX3KUjAVta2RpcpRoAmgGaBiGlFKUjAxuX2Vwb2Noc19yZWaUSzKMAU6USxSMBmNvbW1pdJSMLTAwODdiMGYyNWYxNzUxNjA1YTg3NWVhNjczZWIwMzA0NzAzYjQ3ZmUgbWFpbpSMC2Rpc2NyZXRpemVylIwTUXVhbnRpbGVEaXNjcmV0aXplcpSMBm5faGVhZJRLBIwEc2VlZJRLKowKYWRkX2V4dHJhc5RoAmgGaCOGlFKUjAhscl9kZWNheZSIjBpzdWJzYW1wbGVkX3NlcXVlbmNlX2xlbmd0aJRLCowGY29uZmlnlIwOY29uZmlnLm9mZmxpbmWUjAtyZXNpZF9wZHJvcJRHP7mZmZmZmZqMDXJld2FyZF93ZWlnaHSUSwGMCHNhdmVwYXRolIwabG9ncy9zdG9ja3MtdjBfci9ncHQvYXp1cmWUjAduX3NhdmVzlEsDjBFnZW5lcmF0ZV9leHBfbmFtZZRoAmgGaC+GlFKUjAx2YWx1ZV93ZWlnaHSUSwGMCGRpc2NvdW50lEc/764UeuFHrowGbl9lbWJklEsgjAlzYXZlX2RpZmaUaAJoBmg1hpRSlIwGZGV2aWNllIwEY3VkYZSMCGV4cF9uYW1llIwJZ3B0L2F6dXJllIwNYWN0aW9uX3dlaWdodJRLBYwLcmVhZF9jb25maWeUaAJoBmg9hpRSlIwNbGVhcm5pbmdfcmF0ZZRHP0OpKjBVMmF1YmgvhpRSlC4="
+    },
+    "get_commit": {
+        "_type": "python_object (type = method)",
+        "_value": "gASVHgMAAAAAAACMCGJ1aWx0aW5zlIwHZ2V0YXR0cpSTlIwIX19tYWluX1+UjAZQYXJzZXKUk5QpgZR9lCiMCmJhdGNoX3NpemWUS0CMB25fbGF5ZXKUSwSMBHN0ZXCUSwGMCHNldF9zZWVklGgCaAZoC4aUUpSMCmF0dG5fcGRyb3CURz+5mZmZmZmajBN0ZXJtaW5hdGlvbl9wZW5hbHR5lEqc////jAplbWJkX3Bkcm9wlEc/uZmZmZmZmowHbG9nYmFzZZSMBWxvZ3MvlIwKZ2V0X2NvbW1pdJRoAmgGaBOGlFKUjAdkYXRhc2V0lIwLc3RvY2tzLXYwX3KUjAVta2RpcpRoAmgGaBiGlFKUjAxuX2Vwb2Noc19yZWaUSzKMAU6USxSMBmNvbW1pdJSMLTAwODdiMGYyNWYxNzUxNjA1YTg3NWVhNjczZWIwMzA0NzAzYjQ3ZmUgbWFpbpSMC2Rpc2NyZXRpemVylIwTUXVhbnRpbGVEaXNjcmV0aXplcpSMBm5faGVhZJRLBIwEc2VlZJRLKowKYWRkX2V4dHJhc5RoAmgGaCOGlFKUjAhscl9kZWNheZSIjBpzdWJzYW1wbGVkX3NlcXVlbmNlX2xlbmd0aJRLCowGY29uZmlnlIwOY29uZmlnLm9mZmxpbmWUjAtyZXNpZF9wZHJvcJRHP7mZmZmZmZqMDXJld2FyZF93ZWlnaHSUSwGMCHNhdmVwYXRolIwabG9ncy9zdG9ja3MtdjBfci9ncHQvYXp1cmWUjAduX3NhdmVzlEsDjBFnZW5lcmF0ZV9leHBfbmFtZZRoAmgGaC+GlFKUjAx2YWx1ZV93ZWlnaHSUSwGMCGRpc2NvdW50lEc/764UeuFHrowGbl9lbWJklEsgjAlzYXZlX2RpZmaUaAJoBmg1hpRSlIwGZGV2aWNllIwEY3VkYZSMCGV4cF9uYW1llIwJZ3B0L2F6dXJllIwNYWN0aW9uX3dlaWdodJRLBYwLcmVhZF9jb25maWeUaAJoBmg9hpRSlIwNbGVhcm5pbmdfcmF0ZZRHP0OpKjBVMmF1YmgThpRSlC4="
+    },
+    "learning_rate": 0.0006,
+    "logbase": "logs/",
+    "lr_decay": true,
+    "mkdir": {
+        "_type": "python_object (type = method)",
+        "_value": "gASVHgMAAAAAAACMCGJ1aWx0aW5zlIwHZ2V0YXR0cpSTlIwIX19tYWluX1+UjAZQYXJzZXKUk5QpgZR9lCiMCmJhdGNoX3NpemWUS0CMB25fbGF5ZXKUSwSMBHN0ZXCUSwGMCHNldF9zZWVklGgCaAZoC4aUUpSMCmF0dG5fcGRyb3CURz+5mZmZmZmajBN0ZXJtaW5hdGlvbl9wZW5hbHR5lEqc////jAplbWJkX3Bkcm9wlEc/uZmZmZmZmowHbG9nYmFzZZSMBWxvZ3MvlIwKZ2V0X2NvbW1pdJRoAmgGaBOGlFKUjAdkYXRhc2V0lIwLc3RvY2tzLXYwX3KUjAVta2RpcpRoAmgGaBiGlFKUjAxuX2Vwb2Noc19yZWaUSzKMAU6USxSMBmNvbW1pdJSMLTAwODdiMGYyNWYxNzUxNjA1YTg3NWVhNjczZWIwMzA0NzAzYjQ3ZmUgbWFpbpSMC2Rpc2NyZXRpemVylIwTUXVhbnRpbGVEaXNjcmV0aXplcpSMBm5faGVhZJRLBIwEc2VlZJRLKowKYWRkX2V4dHJhc5RoAmgGaCOGlFKUjAhscl9kZWNheZSIjBpzdWJzYW1wbGVkX3NlcXVlbmNlX2xlbmd0aJRLCowGY29uZmlnlIwOY29uZmlnLm9mZmxpbmWUjAtyZXNpZF9wZHJvcJRHP7mZmZmZmZqMDXJld2FyZF93ZWlnaHSUSwGMCHNhdmVwYXRolIwabG9ncy9zdG9ja3MtdjBfci9ncHQvYXp1cmWUjAduX3NhdmVzlEsDjBFnZW5lcmF0ZV9leHBfbmFtZZRoAmgGaC+GlFKUjAx2YWx1ZV93ZWlnaHSUSwGMCGRpc2NvdW50lEc/764UeuFHrowGbl9lbWJklEsgjAlzYXZlX2RpZmaUaAJoBmg1hpRSlIwGZGV2aWNllIwEY3VkYZSMCGV4cF9uYW1llIwJZ3B0L2F6dXJllIwNYWN0aW9uX3dlaWdodJRLBYwLcmVhZF9jb25maWeUaAJoBmg9hpRSlIwNbGVhcm5pbmdfcmF0ZZRHP0OpKjBVMmF1YmgYhpRSlC4="
+    },
+    "n_embd": 32,
+    "n_epochs_ref": 50,
+    "n_head": 4,
+    "n_layer": 4,
+    "n_saves": 3,
+    "read_config": {
+        "_type": "python_object (type = method)",
+        "_value": "gASVHgMAAAAAAACMCGJ1aWx0aW5zlIwHZ2V0YXR0cpSTlIwIX19tYWluX1+UjAZQYXJzZXKUk5QpgZR9lCiMCmJhdGNoX3NpemWUS0CMB25fbGF5ZXKUSwSMBHN0ZXCUSwGMCHNldF9zZWVklGgCaAZoC4aUUpSMCmF0dG5fcGRyb3CURz+5mZmZmZmajBN0ZXJtaW5hdGlvbl9wZW5hbHR5lEqc////jAplbWJkX3Bkcm9wlEc/uZmZmZmZmowHbG9nYmFzZZSMBWxvZ3MvlIwKZ2V0X2NvbW1pdJRoAmgGaBOGlFKUjAdkYXRhc2V0lIwLc3RvY2tzLXYwX3KUjAVta2RpcpRoAmgGaBiGlFKUjAxuX2Vwb2Noc19yZWaUSzKMAU6USxSMBmNvbW1pdJSMLTAwODdiMGYyNWYxNzUxNjA1YTg3NWVhNjczZWIwMzA0NzAzYjQ3ZmUgbWFpbpSMC2Rpc2NyZXRpemVylIwTUXVhbnRpbGVEaXNjcmV0aXplcpSMBm5faGVhZJRLBIwEc2VlZJRLKowKYWRkX2V4dHJhc5RoAmgGaCOGlFKUjAhscl9kZWNheZSIjBpzdWJzYW1wbGVkX3NlcXVlbmNlX2xlbmd0aJRLCowGY29uZmlnlIwOY29uZmlnLm9mZmxpbmWUjAtyZXNpZF9wZHJvcJRHP7mZmZmZmZqMDXJld2FyZF93ZWlnaHSUSwGMCHNhdmVwYXRolIwabG9ncy9zdG9ja3MtdjBfci9ncHQvYXp1cmWUjAduX3NhdmVzlEsDjBFnZW5lcmF0ZV9leHBfbmFtZZRoAmgGaC+GlFKUjAx2YWx1ZV93ZWlnaHSUSwGMCGRpc2NvdW50lEc/764UeuFHrowGbl9lbWJklEsgjAlzYXZlX2RpZmaUaAJoBmg1hpRSlIwGZGV2aWNllIwEY3VkYZSMCGV4cF9uYW1llIwJZ3B0L2F6dXJllIwNYWN0aW9uX3dlaWdodJRLBYwLcmVhZF9jb25maWeUaAJoBmg9hpRSlIwNbGVhcm5pbmdfcmF0ZZRHP0OpKjBVMmF1Ymg9hpRSlC4="
+    },
+    "reproducibility": {
+        "command_line": "python scripts/train.py",
+        "git_has_uncommitted_changes": true,
+        "git_root": "/home/kjlin0508/Course_work/AI_Intro/RL_for_Quatitatitive_Trading",
+        "git_url": "https://github.com/KJLdefeated/RL_for_Quatitatitive_Trading/tree/0087b0f25f1751605a875ea673eb0304703b47fe",
+        "time": "Mon May 15 17:38:23 2023"
+    },
+    "resid_pdrop": 0.1,
+    "reward_weight": 1,
+    "save_diff": {
+        "_type": "python_object (type = method)",
+        "_value": "gASVHgMAAAAAAACMCGJ1aWx0aW5zlIwHZ2V0YXR0cpSTlIwIX19tYWluX1+UjAZQYXJzZXKUk5QpgZR9lCiMCmJhdGNoX3NpemWUS0CMB25fbGF5ZXKUSwSMBHN0ZXCUSwGMCHNldF9zZWVklGgCaAZoC4aUUpSMCmF0dG5fcGRyb3CURz+5mZmZmZmajBN0ZXJtaW5hdGlvbl9wZW5hbHR5lEqc////jAplbWJkX3Bkcm9wlEc/uZmZmZmZmowHbG9nYmFzZZSMBWxvZ3MvlIwKZ2V0X2NvbW1pdJRoAmgGaBOGlFKUjAdkYXRhc2V0lIwLc3RvY2tzLXYwX3KUjAVta2RpcpRoAmgGaBiGlFKUjAxuX2Vwb2Noc19yZWaUSzKMAU6USxSMBmNvbW1pdJSMLTAwODdiMGYyNWYxNzUxNjA1YTg3NWVhNjczZWIwMzA0NzAzYjQ3ZmUgbWFpbpSMC2Rpc2NyZXRpemVylIwTUXVhbnRpbGVEaXNjcmV0aXplcpSMBm5faGVhZJRLBIwEc2VlZJRLKowKYWRkX2V4dHJhc5RoAmgGaCOGlFKUjAhscl9kZWNheZSIjBpzdWJzYW1wbGVkX3NlcXVlbmNlX2xlbmd0aJRLCowGY29uZmlnlIwOY29uZmlnLm9mZmxpbmWUjAtyZXNpZF9wZHJvcJRHP7mZmZmZmZqMDXJld2FyZF93ZWlnaHSUSwGMCHNhdmVwYXRolIwabG9ncy9zdG9ja3MtdjBfci9ncHQvYXp1cmWUjAduX3NhdmVzlEsDjBFnZW5lcmF0ZV9leHBfbmFtZZRoAmgGaC+GlFKUjAx2YWx1ZV93ZWlnaHSUSwGMCGRpc2NvdW50lEc/764UeuFHrowGbl9lbWJklEsgjAlzYXZlX2RpZmaUaAJoBmg1hpRSlIwGZGV2aWNllIwEY3VkYZSMCGV4cF9uYW1llIwJZ3B0L2F6dXJllIwNYWN0aW9uX3dlaWdodJRLBYwLcmVhZF9jb25maWeUaAJoBmg9hpRSlIwNbGVhcm5pbmdfcmF0ZZRHP0OpKjBVMmF1Ymg1hpRSlC4="
+    },
+    "savepath": "logs/stocks-v0_r/gpt/azure",
+    "seed": 42,
+    "set_seed": {
+        "_type": "python_object (type = method)",
+        "_value": "gASVHgMAAAAAAACMCGJ1aWx0aW5zlIwHZ2V0YXR0cpSTlIwIX19tYWluX1+UjAZQYXJzZXKUk5QpgZR9lCiMCmJhdGNoX3NpemWUS0CMB25fbGF5ZXKUSwSMBHN0ZXCUSwGMCHNldF9zZWVklGgCaAZoC4aUUpSMCmF0dG5fcGRyb3CURz+5mZmZmZmajBN0ZXJtaW5hdGlvbl9wZW5hbHR5lEqc////jAplbWJkX3Bkcm9wlEc/uZmZmZmZmowHbG9nYmFzZZSMBWxvZ3MvlIwKZ2V0X2NvbW1pdJRoAmgGaBOGlFKUjAdkYXRhc2V0lIwLc3RvY2tzLXYwX3KUjAVta2RpcpRoAmgGaBiGlFKUjAxuX2Vwb2Noc19yZWaUSzKMAU6USxSMBmNvbW1pdJSMLTAwODdiMGYyNWYxNzUxNjA1YTg3NWVhNjczZWIwMzA0NzAzYjQ3ZmUgbWFpbpSMC2Rpc2NyZXRpemVylIwTUXVhbnRpbGVEaXNjcmV0aXplcpSMBm5faGVhZJRLBIwEc2VlZJRLKowKYWRkX2V4dHJhc5RoAmgGaCOGlFKUjAhscl9kZWNheZSIjBpzdWJzYW1wbGVkX3NlcXVlbmNlX2xlbmd0aJRLCowGY29uZmlnlIwOY29uZmlnLm9mZmxpbmWUjAtyZXNpZF9wZHJvcJRHP7mZmZmZmZqMDXJld2FyZF93ZWlnaHSUSwGMCHNhdmVwYXRolIwabG9ncy9zdG9ja3MtdjBfci9ncHQvYXp1cmWUjAduX3NhdmVzlEsDjBFnZW5lcmF0ZV9leHBfbmFtZZRoAmgGaC+GlFKUjAx2YWx1ZV93ZWlnaHSUSwGMCGRpc2NvdW50lEc/764UeuFHrowGbl9lbWJklEsgjAlzYXZlX2RpZmaUaAJoBmg1hpRSlIwGZGV2aWNllIwEY3VkYZSMCGV4cF9uYW1llIwJZ3B0L2F6dXJllIwNYWN0aW9uX3dlaWdodJRLBYwLcmVhZF9jb25maWeUaAJoBmg9hpRSlIwNbGVhcm5pbmdfcmF0ZZRHP0OpKjBVMmF1YmgLhpRSlC4="
+    },
+    "step": 1,
+    "subsampled_sequence_length": 10,
+    "termination_penalty": -100,
+    "value_weight": 1
+}
