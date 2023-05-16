@@ -15,9 +15,12 @@ from torch.distributions import Categorical
 import torch.optim.lr_scheduler as Scheduler
 import buildEnv
 from torch import Tensor
+from torch.utils.tensorboard import SummaryWriter
 
 # Define a useful tuple (optional)
 SavedAction = namedtuple('SavedAction', ['log_prob', 'value'])
+
+writer = SummaryWriter("./tb_record_1/Policy_Gradient")
         
 class Policy(nn.Module):
     """
@@ -35,7 +38,7 @@ class Policy(nn.Module):
         # Extract the dimensionality of state and action spaces
         self.discrete = isinstance(env.action_space, gym.spaces.Discrete)     
         self.action_dim = env.action_space.n if self.discrete else env.action_space.shape[0]
-        self.hidden_size = 200
+        self.hidden_size = 256
         self.double()
 
         self.observation_dim = 1
@@ -45,6 +48,7 @@ class Policy(nn.Module):
         ########## YOUR CODE HERE (5~10 lines) ##########
         self.shared_layer1 = nn.Linear(self.observation_dim, self.hidden_size)
         self.shared_layer2 = nn.Linear(self.hidden_size, self.hidden_size)
+        self.shared_layer3 = nn.Linear(self.hidden_size, self.hidden_size)
         self.action_layer = nn.Linear(self.hidden_size, self.action_dim)
         self.value_layer = nn.Linear(self.hidden_size, 1)
         ########## END OF YOUR CODE ##########
@@ -66,6 +70,8 @@ class Policy(nn.Module):
         x = self.shared_layer1(Tensor(state).reshape(self.observation_dim))
         x = F.relu(x)
         x = self.shared_layer2(x)
+        x = F.relu(x)
+        x = self.shared_layer3(x)
         x = F.relu(x)
         action_prob = self.action_layer(x)
         state_value = self.value_layer(x)
@@ -118,14 +124,20 @@ class Policy(nn.Module):
             discounted_sum = reward + gamma * discounted_sum
             returns.append(discounted_sum)
         returns.reverse()
-
         returns = torch.Tensor(returns)
+        returns = (returns - returns.mean()) / (returns.std())
         log_probs = [action.log_prob for action in saved_actions]
+        values = [action.value for action  in saved_actions]
         action_log_probs = torch.stack(log_probs, dim=0)
-        policy_losses = -(returns * action_log_probs).sum()
+        values = torch.stack(values, dim=0)[:,0]
+        with torch.no_grad():
+            advantages = returns - values
+        policy_losses = -(advantages * action_log_probs).sum()
+        value_losses = F.mse_loss(values, returns, reduction='sum')
+        loss = policy_losses + value_losses
         ########## END OF YOUR CODE ##########
         
-        return policy_losses
+        return loss
 
     def clear_memory(self):
         # reset rewards and action buffer
@@ -170,9 +182,7 @@ def train(lr=0.01):
         while True:
             t += 1
             action = model.select_action(state)
-            print(action)
             state, reward, done, _ = env.step(action)
-
             ep_reward += reward
             model.rewards.append(reward)
 
@@ -192,7 +202,8 @@ def train(lr=0.01):
         ewma_reward = 0.05 * ep_reward + (1 - 0.05) * ewma_reward
         print('Episode {}\tlength: {}\treward: {}\t ewma reward: {}\t profit: {}'.format(i_episode, t, ep_reward, ewma_reward, env._total_profit))
 
-        
+        writer.add_scalar('EWMA reward', ewma_reward, i_episode)
+        writer.add_scalar('Episode rewad', ep_reward, i_episode)
         """
         if ewma_reward > env.spec.reward_threshold:
             if not os.path.isdir("./Tables"):
@@ -236,7 +247,7 @@ if __name__ == '__main__':
     random_seed = 10  
     lr = 0.01
     env = buildEnv.createEnv(2330)
-    #env = gym.make('CartPole-v0') 
+    #env = gym.make('stocks-v0', frame_bound=(50, 100), window_size=10)
     
     env.seed(random_seed)  
     torch.manual_seed(random_seed)  

@@ -44,7 +44,7 @@ def segment(observations, terminals, max_path_length):
 
 class SequenceDataset(torch.utils.data.Dataset):
 
-    def __init__(self, env, sequence_length=250, step=10, discount=0.99, max_path_length=1000, penalty=None, device='cuda:0'):
+    def __init__(self, env, sequence_length=250, step=10, discount=0.99, max_path_length=2000, penalty=None, device='cuda:0'):
         print(f'[ datasets/sequence ] Sequence length: {sequence_length} | Step: {step} | Max path length: {max_path_length}')
         #self.env = env = load_environment(env) if type(env) is str else env
         self.sequence_length = sequence_length

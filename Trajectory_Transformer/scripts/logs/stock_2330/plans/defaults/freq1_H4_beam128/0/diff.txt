@@ -1,0 +1,955 @@
+diff --git a/DDPG.py b/DDPG.py
+index d682b97..c69f550 100644
+--- a/DDPG.py
++++ b/DDPG.py
+@@ -1,6 +1,3 @@
+-from env.market import Market
+-from helper.args_parser import model_launcher_parser
+-from helper.data_logger import generate_algorithm_logger, generate_market_logger
+ import sys
+ import gym
+ import numpy as np
+@@ -15,12 +12,15 @@ from torch.autograd import Variable
+ import torch.optim.lr_scheduler as Scheduler
+ import torch.nn.functional as F
+ from torch.utils.tensorboard import SummaryWriter
++from buildEnv import createEnv, MyStocksEnv
++from torch.distributions import Categorical
+ import logging
+ #from skopt.space import Real, Integer
+ #from skopt import gp_minimize
+ logging.basicConfig(filename='train.log', level=logging.DEBUG)
+ 
+-
++os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
++os.environ["CUDA_VISIBLE_DEVICES"] = '2'
+ def soft_update(target, source, tau):
+     for target_param, param in zip(target.parameters(), source.parameters()):
+         target_param.data.copy_(target_param.data * (1.0 - tau) + param.data * tau)
+@@ -153,46 +153,16 @@ class DDPG(object):
+         hard_update(self.actor_target, self.actor) 
+         hard_update(self.critic_target, self.critic)
+ 
+-    def get_stock_code_and_action(self, a, use_greedy=False, use_prob=False):
+-        # Reshape a.
+-        if not use_greedy:
+-            a = a.reshape((-1,))
+-            # Calculate action index depends on prob.
+-            if use_prob:
+-                # Generate indices.
+-                a_indices = np.arange(a.shape[0])
+-                # Get action index.
+-                action_index = np.random.choice(a_indices, p=a)
+-            else:
+-                # Get action index.
+-                action_index = np.argmax(a)
+-        else:
+-            if use_prob:
+-                # Calculate action index
+-                if np.random.uniform() < self.epsilon:
+-                    action_index = np.floor(a).astype(int)
+-                else:
+-                    action_index = np.random.randint(0, self.action_space)
+-            else:
+-                # Calculate action index
+-                action_index = np.floor(a).astype(int)
+-
+-        # Get action
+-        action = action_index % 3
+-        # Get stock index
+-        stock_index = np.floor(action_index / 3).astype(np.int)
+-        # Get stock code.
+-        stock_code = self.env.codes[stock_index]
+-
+-        return stock_code, action, action_index
+-
+-    def select_action(self, state, action_noise=None):
++
++    def select_action(self, state, epsilon=0.0):
+         self.actor.eval()
+-        mu = self.actor((Variable(state)))
+-        mu = mu.data
+-        noise = [0.0] if action_noise is None else action_noise.noise()
+-        noise = torch.FloatTensor(noise)
+-        return torch.clamp(mu + noise, min=0, max=1.0)
++        probs = self.actor((Variable(state)))
++        probs = probs.detach()
++        m = Categorical(logits= probs)
++        action = m.sample().item()
++        if random.random() > epsilon:
++            return self.env.action_space.sample()
++        return action
+ 
+     def update_parameters(self, batch):
+         state_batch = Variable(torch.cat([b.state for b in batch]))
+@@ -201,7 +171,6 @@ class DDPG(object):
+         mask_batch = Variable(torch.cat([b.mask for b in batch]))
+         next_state_batch = Variable(torch.cat([b.next_state for b in batch]))
+         
+-        ########## YOUR CODE HERE (10~20 lines) ##########
+         # Calculate policy loss and value loss
+         # Update the actor and the critic
+         q_v = self.critic(state_batch, action_batch)
+@@ -219,7 +188,6 @@ class DDPG(object):
+         self.actor_optim.zero_grad()
+         policy_loss.backward()
+         self.actor_optim.step()
+-        ########## END OF YOUR CODE ########## 
+ 
+         soft_update(self.actor_target, self.actor, self.tau)
+         soft_update(self.critic_target, self.critic, self.tau)
+@@ -248,9 +216,9 @@ class DDPG(object):
+         if critic_path is not None: 
+             self.critic.load_state_dict(torch.load(critic_path))
+ 
+-def train(env: Market, lr_a_, lr_c_, lr_a_decay_, lr_c_decay_, noise_scale_, batch_size_ , env_name = 'Stock_Market'):   
++def train(env:MyStocksEnv, lr_a_, lr_c_, lr_a_decay_, lr_c_decay_, noise_scale_, batch_size_ , env_name = 'Stock_Market'):   
+     # Define a tensorboard writer
+-    writer = SummaryWriter("./tb_record_3/DDPG/train-{}-{}".format(lr_a_, lr_c_))
++    #writer = SummaryWriter("./tb_record_3/DDPG/train-{}-{}".format(lr_a_, lr_c_))
+ 
+     logging.info('lr_a = {}, lr_c = {} , lr_a_decay={} , lr_c_decay={}, noise_scale = {} , batch_size = {}'.format(
+         lr_a_, lr_c_, lr_a_decay_, lr_c_decay_, noise_scale_, batch_size_))
+@@ -276,9 +244,8 @@ def train(env: Market, lr_a_, lr_c_, lr_a_decay_, lr_c_decay_, noise_scale_, bat
+     total_numsteps = 0
+     updates = 0
+ 
+-    
+-    agent = DDPG(num_inputs = env.data_dim,
+-                 action_space = env.trader.action_space, 
++    agent = DDPG(num_inputs = env.reset().reshape(-1).shape[0],
++                 action_space = env.action_space.n, 
+                  env = env, 
+                  epsilon= epsilon,
+                  gamma = gamma, 
+@@ -288,15 +255,15 @@ def train(env: Market, lr_a_, lr_c_, lr_a_decay_, lr_c_decay_, noise_scale_, bat
+                 lr_c= lr_c, 
+                 lr_a_decay= lr_a_decay, 
+                 lr_c_decay = lr_c_decay)
+-    ounoise = OUNoise(env.trader.action_space)
++    #ounoise = OUNoise(env.action_space)
+     memory = ReplayMemory(replay_size)
+     
+     for i_episode in range(num_episodes):
+         
+-        ounoise.scale = noise_scale
+-        ounoise.reset()
++        #ounoise.scale = noise_scale
++        #ounoise.reset()
+         
+-        state = torch.Tensor([env.reset()])
++        state = torch.Tensor([env.reset().reshape(-1)])
+ 
+         episode_reward = 0
+         val_loss = []
+@@ -308,10 +275,9 @@ def train(env: Market, lr_a_, lr_c_, lr_a_decay_, lr_c_decay_, noise_scale_, bat
+             # 2. Push the sample to the replay buffer
+             # 3. Update the actor and the critic
+             total_numsteps+=1
+-            action = agent.select_action(state, ounoise)
+-            code, action, a_index= agent.get_stock_code_and_action(action, use_greedy=False, use_prob=True)
+-            next_state, reward, done, _ = env.forward(code, action)
+-            next_state = torch.Tensor([next_state])
++            action = agent.select_action(state, epsilon)
++            next_state, reward, done, info = env.step(action)
++            next_state = torch.Tensor([next_state.reshape(-1)])
+             memory.push(state, action, torch.Tensor([done]), next_state, torch.Tensor([reward]))
+             if len(memory) >= batch_size and total_numsteps%updates_per_step == 0:
+                 batch = memory.sample(batch_size)
+@@ -320,7 +286,7 @@ def train(env: Market, lr_a_, lr_c_, lr_a_decay_, lr_c_decay_, noise_scale_, bat
+                 act_loss.append(a_loss)
+             episode_reward += reward
+             state = next_state
+-            if done == env.Done:
++            if done:
+                 break
+             ########## END OF YOUR CODE ########## 
+         
+@@ -330,23 +296,24 @@ def train(env: Market, lr_a_, lr_c_, lr_a_decay_, lr_c_decay_, noise_scale_, bat
+         critic_loss = np.mean(val_loss)
+         t = 0
+         
+-        state = torch.Tensor([env.reset()])
++        state = torch.Tensor([env.reset().reshape(-1)])
+         episode_reward = 0
+         while True:
+             action = agent.select_action(state)
+ 
+-            next_state, reward, done, _ = env.step(action.numpy()[0])
++            next_state, reward, done, info = env.step(action)
+             
+             #env.render()
+             
+             episode_reward += reward
+ 
+-            next_state = torch.Tensor([next_state])
++            next_state = torch.Tensor([next_state.reshape(-1)])
+ 
+             state = next_state
+             
+             t += 1
+             if done:
++                print(info)
+                 break
+ 
+         rewards.append(episode_reward)
+@@ -358,36 +325,22 @@ def train(env: Market, lr_a_, lr_c_, lr_a_decay_, lr_c_decay_, noise_scale_, bat
+             logging.info("Episode: {}, length: {}, reward: {:.2f}, ewma reward: {:.2f}, val loss: {:.2f}, act loss: {:.2f}".format(i_episode, t, rewards[-1], ewma_reward, critic_loss, actor_loss))
+ 
+         #Logging
+-        writer.add_scalar('Reward', episode_reward, i_episode)
+-        writer.add_scalar('EWMA Reward', ewma_reward, i_episode)
+-        writer.add_scalar('Critic loss', critic_loss, i_episode)
+-        writer.add_scalar('Actor loss', actor_loss, i_episode)
+-
+-        if ewma_reward >= 120:
+-            agent.save_model(env_name, '.pth')
+-            logging.info("Running reward is now {} and the total episode is {}.".format(ewma_reward, i_episode))
+-            #break
+-            return (ewma_reward+500)/(i_episode+1) #For tuning
++        #writer.add_scalar('Reward', episode_reward, i_episode)
++        #writer.add_scalar('EWMA Reward', ewma_reward, i_episode)
++        #writer.add_scalar('Critic loss', critic_loss, i_episode)
++        #writer.add_scalar('Actor loss', actor_loss, i_episode)
++
++        #if ewma_reward >= 120:
++        #    agent.save_model(env_name, '.pth')
++        #    logging.info("Running reward is now {} and the total episode is {}.".format(ewma_reward, i_episode))
++        #    #break
++        #    return (ewma_reward+500)/(i_episode+1) #For tuning
+     
+     agent.save_model(env_name, '.pth')  
+     logging.info("Running reward is now {} and the total episode is {}.".format(ewma_reward, i_episode))
+     return (ewma_reward+500)/(i_episode+1) #For tuning
+ 
+ def main():
+-    """
+-    Market environment args 
+-    """
+-    #mode = args.mode
+-    mode = 'test'
+-    # codes = args.codes
+-    codes = ["2303"]
+-    # market = args.market
+-    market = 'stock'
+-    # episode = args.episode
+-    episode = 1000
+-    training_data_ratio = 0.95
+-    # training_data_ratio = args.training_data_ratio
+-
+     """
+     Training args
+     """
+@@ -398,14 +351,8 @@ def main():
+     noise_scale_ = 0.3
+     batch_size_ = 64
+ 
+-    model_name = os.path.basename(__file__).split('.')[0]
+ 
+-    env = Market(codes, start_date="2012-01-01", end_date="2018-01-01", **{
+-        "market": market,
+-        "mix_index_state": False,
+-        "logger": generate_market_logger(model_name),
+-        "training_data_ratio": training_data_ratio,
+-    })
++    env = createEnv(2330)
+ 
+     train(env, lr_a, lr_c, lr_a_decay_, lr_c_decay_, noise_scale_, batch_size_)
+ if __name__ == '__main__':
+diff --git a/Trajectory_Transformer/config/offline.py b/Trajectory_Transformer/config/offline.py
+index 9a7a974..f6720ba 100644
+--- a/Trajectory_Transformer/config/offline.py
++++ b/Trajectory_Transformer/config/offline.py
+@@ -57,7 +57,7 @@ base = {
+         'renderer': 'Renderer',
+ 
+         'plan_freq': 1,
+-        'horizon': 15,
++        'horizon': 4,
+         'beam_width': 128,
+         'n_expand': 2,
+ 
+diff --git a/Trajectory_Transformer/scripts/plan.py b/Trajectory_Transformer/scripts/plan.py
+index f06654a..235e6e8 100644
+--- a/Trajectory_Transformer/scripts/plan.py
++++ b/Trajectory_Transformer/scripts/plan.py
+@@ -12,15 +12,19 @@ parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+ sys.path.insert(0, parent_dir)
+ import trajectory.utils as utils
+ import trajectory.datasets as datasets
++from trajectory.datasets.Random.buildEnv import createEnv
+ from trajectory.search import (
+     beam_plan,
+     make_prefix,
+     extract_actions,
+     update_context,
+ )
++os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
++os.environ["CUDA_VISIBLE_DEVICES"] = '3'
+ 
++code = '2330'
+ class Parser(utils.Parser):
+-    dataset: str = 'forex-v0'
++    dataset: str = 'stock_'+code
+     config: str = 'config.offline'
+ 
+ #######################
+@@ -43,7 +47,8 @@ gpt, gpt_epoch = utils.load_model(args.logbase, args.dataset, args.gpt_loadpath,
+ ####### dataset #######
+ #######################
+ 
+-env = gym.make(args.dataset, frame_bound=(50, 100), window_size=10)
++
++env = createEnv(code)
+ #renderer = utils.make_renderer(args)
+ timer = utils.timer.Timer()
+ 
+diff --git a/Trajectory_Transformer/scripts/train.py b/Trajectory_Transformer/scripts/train.py
+index 6ef5569..bb35461 100644
+--- a/Trajectory_Transformer/scripts/train.py
++++ b/Trajectory_Transformer/scripts/train.py
+@@ -15,7 +15,7 @@ os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+ os.environ["CUDA_VISIBLE_DEVICES"] = '2'
+ 
+ class Parser(utils.Parser):
+-    dataset: str = 'stocks-v0_r'
++    dataset: str = 'stock_2330'
+     config: str = 'config.offline'
+ 
+ #######################
+@@ -111,7 +111,7 @@ trainer = trainer_config()
+ 
+ ## scale number of epochs to keep number of updates constant
+ #n_epochs = int(1e6 / len(dataset) * args.n_epochs_ref)
+-n_epochs = 5000
++n_epochs = 10000
+ save_freq = int(n_epochs // args.n_saves)
+ 
+ for epoch in range(n_epochs):
+diff --git a/Trajectory_Transformer/trajectory/datasets/Random/gen_data.py b/Trajectory_Transformer/trajectory/datasets/Random/gen_data.py
+index 659bd84..28c9f58 100644
+--- a/Trajectory_Transformer/trajectory/datasets/Random/gen_data.py
++++ b/Trajectory_Transformer/trajectory/datasets/Random/gen_data.py
+@@ -5,9 +5,12 @@ from gym_anytrading.datasets import FOREX_EURUSD_1H_ASK, STOCKS_GOOGL
+ import matplotlib.pyplot as plt
+ import numpy as np
+ import pickle
++import os
++import sys
++from buildEnv import createEnv
+ 
+-quat_type = "stocks-v0"
+-env = gym.make('stocks-v0', frame_bound=(50, 100), window_size=10)
++quat_type = 2330
++env = createEnv(2330)
+ # env = gym.make('stocks-v0', frame_bound=(50, 100), window_size=10)
+ 
+ action_dim = env.action_space.n
+@@ -20,11 +23,11 @@ for k in ['observations', 'next_observations', 'actions', 'rewards', 'terminals'
+ for _ in range(episode):
+     observation = env.reset()
+     while True:
+-        action = np.random.rand(action_dim)
+-        next_observation, reward, done, _ = env.step(np.argmax(action))
++        action = env.action_space.sample()
++        next_observation, reward, done, _ = env.step(action)
+         episode_data['observations'].append(observation.reshape(-1).astype('float32'))
+         episode_data['next_observations'].append(next_observation.reshape(-1).astype('float32'))
+-        episode_data['actions'].append(action)
++        episode_data['actions'].append(np.array([action]))
+         episode_data['rewards'].append(np.array([reward]).astype('float32'))
+         episode_data['terminals'].append(done)
+         if done:
+@@ -32,5 +35,5 @@ for _ in range(episode):
+ 
+ for k in ['observations', 'next_observations', 'actions', 'rewards', 'terminals']:
+     episode_data[k] = np.stack(episode_data[k])
+-with open('/home/kjlin0508/Course_work/AI_Intro/RL_for_Quatitatitive_Trading/Trajectory_Transformer/trajectory/datasets/Random/{}_r'.format(quat_type) + '.pkl', 'wb') as f:
++with open('/home/kjlin0508/Course_work/AI_Intro/RL_for_Quatitatitive_Trading/Trajectory_Transformer/trajectory/datasets/Random/stock_{}'.format(quat_type) + '.pkl', 'wb') as f:
+     pickle.dump(episode_data, f)
+\ No newline at end of file
+diff --git a/Trajectory_Transformer/trajectory/datasets/sequence.py b/Trajectory_Transformer/trajectory/datasets/sequence.py
+index 4525194..bd75e78 100644
+--- a/Trajectory_Transformer/trajectory/datasets/sequence.py
++++ b/Trajectory_Transformer/trajectory/datasets/sequence.py
+@@ -44,7 +44,7 @@ def segment(observations, terminals, max_path_length):
+ 
+ class SequenceDataset(torch.utils.data.Dataset):
+ 
+-    def __init__(self, env, sequence_length=250, step=10, discount=0.99, max_path_length=1000, penalty=None, device='cuda:0'):
++    def __init__(self, env, sequence_length=250, step=10, discount=0.99, max_path_length=2000, penalty=None, device='cuda:0'):
+         print(f'[ datasets/sequence ] Sequence length: {sequence_length} | Step: {step} | Max path length: {max_path_length}')
+         #self.env = env = load_environment(env) if type(env) is str else env
+         self.sequence_length = sequence_length
+diff --git a/logs/forex-v0/plans/defaults/freq1_H15_beam128/0/args.json b/logs/forex-v0/plans/defaults/freq1_H15_beam128/0/args.json
+index f42cef8..0e84897 100644
+--- a/logs/forex-v0/plans/defaults/freq1_H15_beam128/0/args.json
++++ b/logs/forex-v0/plans/defaults/freq1_H15_beam128/0/args.json
+@@ -1,23 +1,23 @@
+ {
+     "add_extras": {
+         "_type": "python_object (type = method)",
+-        "_value": "gASVAgMAAAAAAACMCGJ1aWx0aW5zlIwHZ2V0YXR0cpSTlIwIX19tYWluX1+UjAZQYXJzZXKUk5QpgZR9lCiMB2hvcml6b26USw+MB3ZlcmJvc2WUiIwIcmVuZGVyZXKUjAhSZW5kZXJlcpSMB2NkZl9hY3SURz/jMzMzMzMzjApwZXJjZW50aWxllIwEbWVhbpSMCHNldF9zZWVklGgCaAZoD4aUUpSMCHZpc19mcmVxlEsyjAdjZGZfb2JzlE6MBmNvbW1pdJSMLTIwNWY2YjYxZWNlYTYyYTg5OWJkNDk0ZmFhYjE0NTlhNjJlYTU1MjUgbWFpbpSMCXNhdmVfZGlmZpRoAmgGaBaGlFKUjAZzdWZmaXiUjAEwlIwJcGxhbl9mcmVxlEsBjA5wcmVmaXhfY29udGV4dJSIjApiZWFtX3dpZHRolEuAjAphZGRfZXh0cmFzlGgCaAZoHoaUUpSMB2RhdGFzZXSUjAhmb3JleC12MJSMCGV4cF9uYW1llIwgcGxhbnMvZGVmYXVsdHMvZnJlcTFfSDE1X2JlYW0xMjiUjAhuX2V4cGFuZJRLAowGcHJlZml4lIwPcGxhbnMvZGVmYXVsdHMvlIwFa19vYnOUSwGMF21heF9jb250ZXh0X3RyYW5zaXRpb25zlEsFjBFnZW5lcmF0ZV9leHBfbmFtZZRoAmgGaCqGlFKUjAZkZXZpY2WUjARjdWRhlIwMZ3B0X2xvYWRwYXRolIwJZ3B0L2F6dXJllIwKZ2V0X2NvbW1pdJRoAmgGaDGGlFKUjAtyZWFkX2NvbmZpZ5RoAmgGaDSGlFKUjAVrX2FjdJROjAlncHRfZXBvY2iUjAZsYXRlc3SUjAZjb25maWeUjA5jb25maWcub2ZmbGluZZSMB2xvZ2Jhc2WUjAVsb2dzL5SMBW1rZGlylGgCaAZoPoaUUpSMCHNhdmVwYXRolIwwbG9ncy9mb3JleC12MC9wbGFucy9kZWZhdWx0cy9mcmVxMV9IMTVfYmVhbTEyOC8wlHViaB6GlFKULg=="
++        "_value": "gASVAgMAAAAAAACMCGJ1aWx0aW5zlIwHZ2V0YXR0cpSTlIwIX19tYWluX1+UjAZQYXJzZXKUk5QpgZR9lCiMDnByZWZpeF9jb250ZXh0lIiMBWtfb2JzlEsBjAlncHRfZXBvY2iUjAZsYXRlc3SUjAVrX2FjdJROjAdsb2diYXNllIwFbG9ncy+UjAh2aXNfZnJlcZRLMowXbWF4X2NvbnRleHRfdHJhbnNpdGlvbnOUSwWMBmNvbW1pdJSMLTE2ZjIxMmYwMTA1OWVkNjhlZTMzNzMxOGVjZmM0YTU3ZDMxYmRjYTQgbWFpbpSMCmJlYW1fd2lkdGiUS4CMEWdlbmVyYXRlX2V4cF9uYW1llGgCaAZoFIaUUpSMDGdwdF9sb2FkcGF0aJSMCWdwdC9henVyZZSMCnBlcmNlbnRpbGWUjARtZWFulIwIcmVuZGVyZXKUjAhSZW5kZXJlcpSMB3ZlcmJvc2WUiIwIZXhwX25hbWWUjCBwbGFucy9kZWZhdWx0cy9mcmVxMV9IMTVfYmVhbTEyOJSMBnByZWZpeJSMD3BsYW5zL2RlZmF1bHRzL5SMCHNhdmVwYXRolIwwbG9ncy9mb3JleC12MC9wbGFucy9kZWZhdWx0cy9mcmVxMV9IMTVfYmVhbTEyOC8wlIwIc2V0X3NlZWSUaAJoBmgkhpRSlIwJc2F2ZV9kaWZmlGgCaAZoJ4aUUpSMBmNvbmZpZ5SMDmNvbmZpZy5vZmZsaW5llIwJcGxhbl9mcmVxlEsBjAZzdWZmaXiUjAEwlIwFbWtkaXKUaAJoBmgvhpRSlIwKYWRkX2V4dHJhc5RoAmgGaDKGlFKUjApnZXRfY29tbWl0lGgCaAZoNYaUUpSMB2NkZl9vYnOUTowHY2RmX2FjdJRHP+MzMzMzMzOMB2hvcml6b26USw+MBmRldmljZZSMBGN1ZGGUjAhuX2V4cGFuZJRLAowLcmVhZF9jb25maWeUaAJoBmg+hpRSlIwHZGF0YXNldJSMCGZvcmV4LXYwlHViaDKGlFKULg=="
+     },
+     "beam_width": 128,
+     "cdf_act": 0.6,
+     "cdf_obs": null,
+-    "commit": "205f6b61ecea62a899bd494faab1459a62ea5525 main",
++    "commit": "16f212f01059ed68ee337318ecfc4a57d31bdca4 main",
+     "config": "config.offline",
+     "dataset": "forex-v0",
+     "device": "cuda",
+     "exp_name": "plans/defaults/freq1_H15_beam128",
+     "generate_exp_name": {
+         "_type": "python_object (type = method)",
+-        "_value": "gASVAgMAAAAAAACMCGJ1aWx0aW5zlIwHZ2V0YXR0cpSTlIwIX19tYWluX1+UjAZQYXJzZXKUk5QpgZR9lCiMB2hvcml6b26USw+MB3ZlcmJvc2WUiIwIcmVuZGVyZXKUjAhSZW5kZXJlcpSMB2NkZl9hY3SURz/jMzMzMzMzjApwZXJjZW50aWxllIwEbWVhbpSMCHNldF9zZWVklGgCaAZoD4aUUpSMCHZpc19mcmVxlEsyjAdjZGZfb2JzlE6MBmNvbW1pdJSMLTIwNWY2YjYxZWNlYTYyYTg5OWJkNDk0ZmFhYjE0NTlhNjJlYTU1MjUgbWFpbpSMCXNhdmVfZGlmZpRoAmgGaBaGlFKUjAZzdWZmaXiUjAEwlIwJcGxhbl9mcmVxlEsBjA5wcmVmaXhfY29udGV4dJSIjApiZWFtX3dpZHRolEuAjAphZGRfZXh0cmFzlGgCaAZoHoaUUpSMB2RhdGFzZXSUjAhmb3JleC12MJSMCGV4cF9uYW1llIwgcGxhbnMvZGVmYXVsdHMvZnJlcTFfSDE1X2JlYW0xMjiUjAhuX2V4cGFuZJRLAowGcHJlZml4lIwPcGxhbnMvZGVmYXVsdHMvlIwFa19vYnOUSwGMF21heF9jb250ZXh0X3RyYW5zaXRpb25zlEsFjBFnZW5lcmF0ZV9leHBfbmFtZZRoAmgGaCqGlFKUjAZkZXZpY2WUjARjdWRhlIwMZ3B0X2xvYWRwYXRolIwJZ3B0L2F6dXJllIwKZ2V0X2NvbW1pdJRoAmgGaDGGlFKUjAtyZWFkX2NvbmZpZ5RoAmgGaDSGlFKUjAVrX2FjdJROjAlncHRfZXBvY2iUjAZsYXRlc3SUjAZjb25maWeUjA5jb25maWcub2ZmbGluZZSMB2xvZ2Jhc2WUjAVsb2dzL5SMBW1rZGlylGgCaAZoPoaUUpSMCHNhdmVwYXRolIwwbG9ncy9mb3JleC12MC9wbGFucy9kZWZhdWx0cy9mcmVxMV9IMTVfYmVhbTEyOC8wlHViaCqGlFKULg=="
++        "_value": "gASVAgMAAAAAAACMCGJ1aWx0aW5zlIwHZ2V0YXR0cpSTlIwIX19tYWluX1+UjAZQYXJzZXKUk5QpgZR9lCiMDnByZWZpeF9jb250ZXh0lIiMBWtfb2JzlEsBjAlncHRfZXBvY2iUjAZsYXRlc3SUjAVrX2FjdJROjAdsb2diYXNllIwFbG9ncy+UjAh2aXNfZnJlcZRLMowXbWF4X2NvbnRleHRfdHJhbnNpdGlvbnOUSwWMBmNvbW1pdJSMLTE2ZjIxMmYwMTA1OWVkNjhlZTMzNzMxOGVjZmM0YTU3ZDMxYmRjYTQgbWFpbpSMCmJlYW1fd2lkdGiUS4CMEWdlbmVyYXRlX2V4cF9uYW1llGgCaAZoFIaUUpSMDGdwdF9sb2FkcGF0aJSMCWdwdC9henVyZZSMCnBlcmNlbnRpbGWUjARtZWFulIwIcmVuZGVyZXKUjAhSZW5kZXJlcpSMB3ZlcmJvc2WUiIwIZXhwX25hbWWUjCBwbGFucy9kZWZhdWx0cy9mcmVxMV9IMTVfYmVhbTEyOJSMBnByZWZpeJSMD3BsYW5zL2RlZmF1bHRzL5SMCHNhdmVwYXRolIwwbG9ncy9mb3JleC12MC9wbGFucy9kZWZhdWx0cy9mcmVxMV9IMTVfYmVhbTEyOC8wlIwIc2V0X3NlZWSUaAJoBmgkhpRSlIwJc2F2ZV9kaWZmlGgCaAZoJ4aUUpSMBmNvbmZpZ5SMDmNvbmZpZy5vZmZsaW5llIwJcGxhbl9mcmVxlEsBjAZzdWZmaXiUjAEwlIwFbWtkaXKUaAJoBmgvhpRSlIwKYWRkX2V4dHJhc5RoAmgGaDKGlFKUjApnZXRfY29tbWl0lGgCaAZoNYaUUpSMB2NkZl9vYnOUTowHY2RmX2FjdJRHP+MzMzMzMzOMB2hvcml6b26USw+MBmRldmljZZSMBGN1ZGGUjAhuX2V4cGFuZJRLAowLcmVhZF9jb25maWeUaAJoBmg+hpRSlIwHZGF0YXNldJSMCGZvcmV4LXYwlHViaBSGlFKULg=="
+     },
+     "get_commit": {
+         "_type": "python_object (type = method)",
+-        "_value": "gASVAgMAAAAAAACMCGJ1aWx0aW5zlIwHZ2V0YXR0cpSTlIwIX19tYWluX1+UjAZQYXJzZXKUk5QpgZR9lCiMB2hvcml6b26USw+MB3ZlcmJvc2WUiIwIcmVuZGVyZXKUjAhSZW5kZXJlcpSMB2NkZl9hY3SURz/jMzMzMzMzjApwZXJjZW50aWxllIwEbWVhbpSMCHNldF9zZWVklGgCaAZoD4aUUpSMCHZpc19mcmVxlEsyjAdjZGZfb2JzlE6MBmNvbW1pdJSMLTIwNWY2YjYxZWNlYTYyYTg5OWJkNDk0ZmFhYjE0NTlhNjJlYTU1MjUgbWFpbpSMCXNhdmVfZGlmZpRoAmgGaBaGlFKUjAZzdWZmaXiUjAEwlIwJcGxhbl9mcmVxlEsBjA5wcmVmaXhfY29udGV4dJSIjApiZWFtX3dpZHRolEuAjAphZGRfZXh0cmFzlGgCaAZoHoaUUpSMB2RhdGFzZXSUjAhmb3JleC12MJSMCGV4cF9uYW1llIwgcGxhbnMvZGVmYXVsdHMvZnJlcTFfSDE1X2JlYW0xMjiUjAhuX2V4cGFuZJRLAowGcHJlZml4lIwPcGxhbnMvZGVmYXVsdHMvlIwFa19vYnOUSwGMF21heF9jb250ZXh0X3RyYW5zaXRpb25zlEsFjBFnZW5lcmF0ZV9leHBfbmFtZZRoAmgGaCqGlFKUjAZkZXZpY2WUjARjdWRhlIwMZ3B0X2xvYWRwYXRolIwJZ3B0L2F6dXJllIwKZ2V0X2NvbW1pdJRoAmgGaDGGlFKUjAtyZWFkX2NvbmZpZ5RoAmgGaDSGlFKUjAVrX2FjdJROjAlncHRfZXBvY2iUjAZsYXRlc3SUjAZjb25maWeUjA5jb25maWcub2ZmbGluZZSMB2xvZ2Jhc2WUjAVsb2dzL5SMBW1rZGlylGgCaAZoPoaUUpSMCHNhdmVwYXRolIwwbG9ncy9mb3JleC12MC9wbGFucy9kZWZhdWx0cy9mcmVxMV9IMTVfYmVhbTEyOC8wlHViaDGGlFKULg=="
++        "_value": "gASVAgMAAAAAAACMCGJ1aWx0aW5zlIwHZ2V0YXR0cpSTlIwIX19tYWluX1+UjAZQYXJzZXKUk5QpgZR9lCiMDnByZWZpeF9jb250ZXh0lIiMBWtfb2JzlEsBjAlncHRfZXBvY2iUjAZsYXRlc3SUjAVrX2FjdJROjAdsb2diYXNllIwFbG9ncy+UjAh2aXNfZnJlcZRLMowXbWF4X2NvbnRleHRfdHJhbnNpdGlvbnOUSwWMBmNvbW1pdJSMLTE2ZjIxMmYwMTA1OWVkNjhlZTMzNzMxOGVjZmM0YTU3ZDMxYmRjYTQgbWFpbpSMCmJlYW1fd2lkdGiUS4CMEWdlbmVyYXRlX2V4cF9uYW1llGgCaAZoFIaUUpSMDGdwdF9sb2FkcGF0aJSMCWdwdC9henVyZZSMCnBlcmNlbnRpbGWUjARtZWFulIwIcmVuZGVyZXKUjAhSZW5kZXJlcpSMB3ZlcmJvc2WUiIwIZXhwX25hbWWUjCBwbGFucy9kZWZhdWx0cy9mcmVxMV9IMTVfYmVhbTEyOJSMBnByZWZpeJSMD3BsYW5zL2RlZmF1bHRzL5SMCHNhdmVwYXRolIwwbG9ncy9mb3JleC12MC9wbGFucy9kZWZhdWx0cy9mcmVxMV9IMTVfYmVhbTEyOC8wlIwIc2V0X3NlZWSUaAJoBmgkhpRSlIwJc2F2ZV9kaWZmlGgCaAZoJ4aUUpSMBmNvbmZpZ5SMDmNvbmZpZy5vZmZsaW5llIwJcGxhbl9mcmVxlEsBjAZzdWZmaXiUjAEwlIwFbWtkaXKUaAJoBmgvhpRSlIwKYWRkX2V4dHJhc5RoAmgGaDKGlFKUjApnZXRfY29tbWl0lGgCaAZoNYaUUpSMB2NkZl9vYnOUTowHY2RmX2FjdJRHP+MzMzMzMzOMB2hvcml6b26USw+MBmRldmljZZSMBGN1ZGGUjAhuX2V4cGFuZJRLAowLcmVhZF9jb25maWeUaAJoBmg+hpRSlIwHZGF0YXNldJSMCGZvcmV4LXYwlHViaDWGlFKULg=="
+     },
+     "gpt_epoch": "latest",
+     "gpt_loadpath": "gpt/azure",
+@@ -28,7 +28,7 @@
+     "max_context_transitions": 5,
+     "mkdir": {
+         "_type": "python_object (type = method)",
+-        "_value": "gASVAgMAAAAAAACMCGJ1aWx0aW5zlIwHZ2V0YXR0cpSTlIwIX19tYWluX1+UjAZQYXJzZXKUk5QpgZR9lCiMB2hvcml6b26USw+MB3ZlcmJvc2WUiIwIcmVuZGVyZXKUjAhSZW5kZXJlcpSMB2NkZl9hY3SURz/jMzMzMzMzjApwZXJjZW50aWxllIwEbWVhbpSMCHNldF9zZWVklGgCaAZoD4aUUpSMCHZpc19mcmVxlEsyjAdjZGZfb2JzlE6MBmNvbW1pdJSMLTIwNWY2YjYxZWNlYTYyYTg5OWJkNDk0ZmFhYjE0NTlhNjJlYTU1MjUgbWFpbpSMCXNhdmVfZGlmZpRoAmgGaBaGlFKUjAZzdWZmaXiUjAEwlIwJcGxhbl9mcmVxlEsBjA5wcmVmaXhfY29udGV4dJSIjApiZWFtX3dpZHRolEuAjAphZGRfZXh0cmFzlGgCaAZoHoaUUpSMB2RhdGFzZXSUjAhmb3JleC12MJSMCGV4cF9uYW1llIwgcGxhbnMvZGVmYXVsdHMvZnJlcTFfSDE1X2JlYW0xMjiUjAhuX2V4cGFuZJRLAowGcHJlZml4lIwPcGxhbnMvZGVmYXVsdHMvlIwFa19vYnOUSwGMF21heF9jb250ZXh0X3RyYW5zaXRpb25zlEsFjBFnZW5lcmF0ZV9leHBfbmFtZZRoAmgGaCqGlFKUjAZkZXZpY2WUjARjdWRhlIwMZ3B0X2xvYWRwYXRolIwJZ3B0L2F6dXJllIwKZ2V0X2NvbW1pdJRoAmgGaDGGlFKUjAtyZWFkX2NvbmZpZ5RoAmgGaDSGlFKUjAVrX2FjdJROjAlncHRfZXBvY2iUjAZsYXRlc3SUjAZjb25maWeUjA5jb25maWcub2ZmbGluZZSMB2xvZ2Jhc2WUjAVsb2dzL5SMBW1rZGlylGgCaAZoPoaUUpSMCHNhdmVwYXRolIwwbG9ncy9mb3JleC12MC9wbGFucy9kZWZhdWx0cy9mcmVxMV9IMTVfYmVhbTEyOC8wlHViaD6GlFKULg=="
++        "_value": "gASVAgMAAAAAAACMCGJ1aWx0aW5zlIwHZ2V0YXR0cpSTlIwIX19tYWluX1+UjAZQYXJzZXKUk5QpgZR9lCiMDnByZWZpeF9jb250ZXh0lIiMBWtfb2JzlEsBjAlncHRfZXBvY2iUjAZsYXRlc3SUjAVrX2FjdJROjAdsb2diYXNllIwFbG9ncy+UjAh2aXNfZnJlcZRLMowXbWF4X2NvbnRleHRfdHJhbnNpdGlvbnOUSwWMBmNvbW1pdJSMLTE2ZjIxMmYwMTA1OWVkNjhlZTMzNzMxOGVjZmM0YTU3ZDMxYmRjYTQgbWFpbpSMCmJlYW1fd2lkdGiUS4CMEWdlbmVyYXRlX2V4cF9uYW1llGgCaAZoFIaUUpSMDGdwdF9sb2FkcGF0aJSMCWdwdC9henVyZZSMCnBlcmNlbnRpbGWUjARtZWFulIwIcmVuZGVyZXKUjAhSZW5kZXJlcpSMB3ZlcmJvc2WUiIwIZXhwX25hbWWUjCBwbGFucy9kZWZhdWx0cy9mcmVxMV9IMTVfYmVhbTEyOJSMBnByZWZpeJSMD3BsYW5zL2RlZmF1bHRzL5SMCHNhdmVwYXRolIwwbG9ncy9mb3JleC12MC9wbGFucy9kZWZhdWx0cy9mcmVxMV9IMTVfYmVhbTEyOC8wlIwIc2V0X3NlZWSUaAJoBmgkhpRSlIwJc2F2ZV9kaWZmlGgCaAZoJ4aUUpSMBmNvbmZpZ5SMDmNvbmZpZy5vZmZsaW5llIwJcGxhbl9mcmVxlEsBjAZzdWZmaXiUjAEwlIwFbWtkaXKUaAJoBmgvhpRSlIwKYWRkX2V4dHJhc5RoAmgGaDKGlFKUjApnZXRfY29tbWl0lGgCaAZoNYaUUpSMB2NkZl9vYnOUTowHY2RmX2FjdJRHP+MzMzMzMzOMB2hvcml6b26USw+MBmRldmljZZSMBGN1ZGGUjAhuX2V4cGFuZJRLAowLcmVhZF9jb25maWeUaAJoBmg+hpRSlIwHZGF0YXNldJSMCGZvcmV4LXYwlHViaC+GlFKULg=="
+     },
+     "n_expand": 2,
+     "percentile": "mean",
+@@ -37,24 +37,24 @@
+     "prefix_context": true,
+     "read_config": {
+         "_type": "python_object (type = method)",
+-        "_value": "gASVAgMAAAAAAACMCGJ1aWx0aW5zlIwHZ2V0YXR0cpSTlIwIX19tYWluX1+UjAZQYXJzZXKUk5QpgZR9lCiMB2hvcml6b26USw+MB3ZlcmJvc2WUiIwIcmVuZGVyZXKUjAhSZW5kZXJlcpSMB2NkZl9hY3SURz/jMzMzMzMzjApwZXJjZW50aWxllIwEbWVhbpSMCHNldF9zZWVklGgCaAZoD4aUUpSMCHZpc19mcmVxlEsyjAdjZGZfb2JzlE6MBmNvbW1pdJSMLTIwNWY2YjYxZWNlYTYyYTg5OWJkNDk0ZmFhYjE0NTlhNjJlYTU1MjUgbWFpbpSMCXNhdmVfZGlmZpRoAmgGaBaGlFKUjAZzdWZmaXiUjAEwlIwJcGxhbl9mcmVxlEsBjA5wcmVmaXhfY29udGV4dJSIjApiZWFtX3dpZHRolEuAjAphZGRfZXh0cmFzlGgCaAZoHoaUUpSMB2RhdGFzZXSUjAhmb3JleC12MJSMCGV4cF9uYW1llIwgcGxhbnMvZGVmYXVsdHMvZnJlcTFfSDE1X2JlYW0xMjiUjAhuX2V4cGFuZJRLAowGcHJlZml4lIwPcGxhbnMvZGVmYXVsdHMvlIwFa19vYnOUSwGMF21heF9jb250ZXh0X3RyYW5zaXRpb25zlEsFjBFnZW5lcmF0ZV9leHBfbmFtZZRoAmgGaCqGlFKUjAZkZXZpY2WUjARjdWRhlIwMZ3B0X2xvYWRwYXRolIwJZ3B0L2F6dXJllIwKZ2V0X2NvbW1pdJRoAmgGaDGGlFKUjAtyZWFkX2NvbmZpZ5RoAmgGaDSGlFKUjAVrX2FjdJROjAlncHRfZXBvY2iUjAZsYXRlc3SUjAZjb25maWeUjA5jb25maWcub2ZmbGluZZSMB2xvZ2Jhc2WUjAVsb2dzL5SMBW1rZGlylGgCaAZoPoaUUpSMCHNhdmVwYXRolIwwbG9ncy9mb3JleC12MC9wbGFucy9kZWZhdWx0cy9mcmVxMV9IMTVfYmVhbTEyOC8wlHViaDSGlFKULg=="
++        "_value": "gASVAgMAAAAAAACMCGJ1aWx0aW5zlIwHZ2V0YXR0cpSTlIwIX19tYWluX1+UjAZQYXJzZXKUk5QpgZR9lCiMDnByZWZpeF9jb250ZXh0lIiMBWtfb2JzlEsBjAlncHRfZXBvY2iUjAZsYXRlc3SUjAVrX2FjdJROjAdsb2diYXNllIwFbG9ncy+UjAh2aXNfZnJlcZRLMowXbWF4X2NvbnRleHRfdHJhbnNpdGlvbnOUSwWMBmNvbW1pdJSMLTE2ZjIxMmYwMTA1OWVkNjhlZTMzNzMxOGVjZmM0YTU3ZDMxYmRjYTQgbWFpbpSMCmJlYW1fd2lkdGiUS4CMEWdlbmVyYXRlX2V4cF9uYW1llGgCaAZoFIaUUpSMDGdwdF9sb2FkcGF0aJSMCWdwdC9henVyZZSMCnBlcmNlbnRpbGWUjARtZWFulIwIcmVuZGVyZXKUjAhSZW5kZXJlcpSMB3ZlcmJvc2WUiIwIZXhwX25hbWWUjCBwbGFucy9kZWZhdWx0cy9mcmVxMV9IMTVfYmVhbTEyOJSMBnByZWZpeJSMD3BsYW5zL2RlZmF1bHRzL5SMCHNhdmVwYXRolIwwbG9ncy9mb3JleC12MC9wbGFucy9kZWZhdWx0cy9mcmVxMV9IMTVfYmVhbTEyOC8wlIwIc2V0X3NlZWSUaAJoBmgkhpRSlIwJc2F2ZV9kaWZmlGgCaAZoJ4aUUpSMBmNvbmZpZ5SMDmNvbmZpZy5vZmZsaW5llIwJcGxhbl9mcmVxlEsBjAZzdWZmaXiUjAEwlIwFbWtkaXKUaAJoBmgvhpRSlIwKYWRkX2V4dHJhc5RoAmgGaDKGlFKUjApnZXRfY29tbWl0lGgCaAZoNYaUUpSMB2NkZl9vYnOUTowHY2RmX2FjdJRHP+MzMzMzMzOMB2hvcml6b26USw+MBmRldmljZZSMBGN1ZGGUjAhuX2V4cGFuZJRLAowLcmVhZF9jb25maWeUaAJoBmg+hpRSlIwHZGF0YXNldJSMCGZvcmV4LXYwlHViaD6GlFKULg=="
+     },
+     "renderer": "Renderer",
+     "reproducibility": {
+         "command_line": "python /home/kjlin0508/Course_work/AI_Intro/RL_for_Quatitatitive_Trading/Trajectory_Transformer/scripts/plan.py",
+         "git_has_uncommitted_changes": true,
+         "git_root": "/home/kjlin0508/Course_work/AI_Intro/RL_for_Quatitatitive_Trading",
+-        "git_url": "https://github.com/KJLdefeated/RL_for_Quatitatitive_Trading/tree/205f6b61ecea62a899bd494faab1459a62ea5525",
+-        "time": "Sun May 14 00:30:59 2023"
++        "git_url": "https://github.com/KJLdefeated/RL_for_Quatitatitive_Trading/tree/16f212f01059ed68ee337318ecfc4a57d31bdca4",
++        "time": "Tue May 16 00:22:08 2023"
+     },
+     "save_diff": {
+         "_type": "python_object (type = method)",
+-        "_value": "gASVAgMAAAAAAACMCGJ1aWx0aW5zlIwHZ2V0YXR0cpSTlIwIX19tYWluX1+UjAZQYXJzZXKUk5QpgZR9lCiMB2hvcml6b26USw+MB3ZlcmJvc2WUiIwIcmVuZGVyZXKUjAhSZW5kZXJlcpSMB2NkZl9hY3SURz/jMzMzMzMzjApwZXJjZW50aWxllIwEbWVhbpSMCHNldF9zZWVklGgCaAZoD4aUUpSMCHZpc19mcmVxlEsyjAdjZGZfb2JzlE6MBmNvbW1pdJSMLTIwNWY2YjYxZWNlYTYyYTg5OWJkNDk0ZmFhYjE0NTlhNjJlYTU1MjUgbWFpbpSMCXNhdmVfZGlmZpRoAmgGaBaGlFKUjAZzdWZmaXiUjAEwlIwJcGxhbl9mcmVxlEsBjA5wcmVmaXhfY29udGV4dJSIjApiZWFtX3dpZHRolEuAjAphZGRfZXh0cmFzlGgCaAZoHoaUUpSMB2RhdGFzZXSUjAhmb3JleC12MJSMCGV4cF9uYW1llIwgcGxhbnMvZGVmYXVsdHMvZnJlcTFfSDE1X2JlYW0xMjiUjAhuX2V4cGFuZJRLAowGcHJlZml4lIwPcGxhbnMvZGVmYXVsdHMvlIwFa19vYnOUSwGMF21heF9jb250ZXh0X3RyYW5zaXRpb25zlEsFjBFnZW5lcmF0ZV9leHBfbmFtZZRoAmgGaCqGlFKUjAZkZXZpY2WUjARjdWRhlIwMZ3B0X2xvYWRwYXRolIwJZ3B0L2F6dXJllIwKZ2V0X2NvbW1pdJRoAmgGaDGGlFKUjAtyZWFkX2NvbmZpZ5RoAmgGaDSGlFKUjAVrX2FjdJROjAlncHRfZXBvY2iUjAZsYXRlc3SUjAZjb25maWeUjA5jb25maWcub2ZmbGluZZSMB2xvZ2Jhc2WUjAVsb2dzL5SMBW1rZGlylGgCaAZoPoaUUpSMCHNhdmVwYXRolIwwbG9ncy9mb3JleC12MC9wbGFucy9kZWZhdWx0cy9mcmVxMV9IMTVfYmVhbTEyOC8wlHViaBaGlFKULg=="
++        "_value": "gASVAgMAAAAAAACMCGJ1aWx0aW5zlIwHZ2V0YXR0cpSTlIwIX19tYWluX1+UjAZQYXJzZXKUk5QpgZR9lCiMDnByZWZpeF9jb250ZXh0lIiMBWtfb2JzlEsBjAlncHRfZXBvY2iUjAZsYXRlc3SUjAVrX2FjdJROjAdsb2diYXNllIwFbG9ncy+UjAh2aXNfZnJlcZRLMowXbWF4X2NvbnRleHRfdHJhbnNpdGlvbnOUSwWMBmNvbW1pdJSMLTE2ZjIxMmYwMTA1OWVkNjhlZTMzNzMxOGVjZmM0YTU3ZDMxYmRjYTQgbWFpbpSMCmJlYW1fd2lkdGiUS4CMEWdlbmVyYXRlX2V4cF9uYW1llGgCaAZoFIaUUpSMDGdwdF9sb2FkcGF0aJSMCWdwdC9henVyZZSMCnBlcmNlbnRpbGWUjARtZWFulIwIcmVuZGVyZXKUjAhSZW5kZXJlcpSMB3ZlcmJvc2WUiIwIZXhwX25hbWWUjCBwbGFucy9kZWZhdWx0cy9mcmVxMV9IMTVfYmVhbTEyOJSMBnByZWZpeJSMD3BsYW5zL2RlZmF1bHRzL5SMCHNhdmVwYXRolIwwbG9ncy9mb3JleC12MC9wbGFucy9kZWZhdWx0cy9mcmVxMV9IMTVfYmVhbTEyOC8wlIwIc2V0X3NlZWSUaAJoBmgkhpRSlIwJc2F2ZV9kaWZmlGgCaAZoJ4aUUpSMBmNvbmZpZ5SMDmNvbmZpZy5vZmZsaW5llIwJcGxhbl9mcmVxlEsBjAZzdWZmaXiUjAEwlIwFbWtkaXKUaAJoBmgvhpRSlIwKYWRkX2V4dHJhc5RoAmgGaDKGlFKUjApnZXRfY29tbWl0lGgCaAZoNYaUUpSMB2NkZl9vYnOUTowHY2RmX2FjdJRHP+MzMzMzMzOMB2hvcml6b26USw+MBmRldmljZZSMBGN1ZGGUjAhuX2V4cGFuZJRLAowLcmVhZF9jb25maWeUaAJoBmg+hpRSlIwHZGF0YXNldJSMCGZvcmV4LXYwlHViaCeGlFKULg=="
+     },
+     "savepath": "logs/forex-v0/plans/defaults/freq1_H15_beam128/0",
+     "set_seed": {
+         "_type": "python_object (type = method)",
+-        "_value": "gASVAgMAAAAAAACMCGJ1aWx0aW5zlIwHZ2V0YXR0cpSTlIwIX19tYWluX1+UjAZQYXJzZXKUk5QpgZR9lCiMB2hvcml6b26USw+MB3ZlcmJvc2WUiIwIcmVuZGVyZXKUjAhSZW5kZXJlcpSMB2NkZl9hY3SURz/jMzMzMzMzjApwZXJjZW50aWxllIwEbWVhbpSMCHNldF9zZWVklGgCaAZoD4aUUpSMCHZpc19mcmVxlEsyjAdjZGZfb2JzlE6MBmNvbW1pdJSMLTIwNWY2YjYxZWNlYTYyYTg5OWJkNDk0ZmFhYjE0NTlhNjJlYTU1MjUgbWFpbpSMCXNhdmVfZGlmZpRoAmgGaBaGlFKUjAZzdWZmaXiUjAEwlIwJcGxhbl9mcmVxlEsBjA5wcmVmaXhfY29udGV4dJSIjApiZWFtX3dpZHRolEuAjAphZGRfZXh0cmFzlGgCaAZoHoaUUpSMB2RhdGFzZXSUjAhmb3JleC12MJSMCGV4cF9uYW1llIwgcGxhbnMvZGVmYXVsdHMvZnJlcTFfSDE1X2JlYW0xMjiUjAhuX2V4cGFuZJRLAowGcHJlZml4lIwPcGxhbnMvZGVmYXVsdHMvlIwFa19vYnOUSwGMF21heF9jb250ZXh0X3RyYW5zaXRpb25zlEsFjBFnZW5lcmF0ZV9leHBfbmFtZZRoAmgGaCqGlFKUjAZkZXZpY2WUjARjdWRhlIwMZ3B0X2xvYWRwYXRolIwJZ3B0L2F6dXJllIwKZ2V0X2NvbW1pdJRoAmgGaDGGlFKUjAtyZWFkX2NvbmZpZ5RoAmgGaDSGlFKUjAVrX2FjdJROjAlncHRfZXBvY2iUjAZsYXRlc3SUjAZjb25maWeUjA5jb25maWcub2ZmbGluZZSMB2xvZ2Jhc2WUjAVsb2dzL5SMBW1rZGlylGgCaAZoPoaUUpSMCHNhdmVwYXRolIwwbG9ncy9mb3JleC12MC9wbGFucy9kZWZhdWx0cy9mcmVxMV9IMTVfYmVhbTEyOC8wlHViaA+GlFKULg=="
++        "_value": "gASVAgMAAAAAAACMCGJ1aWx0aW5zlIwHZ2V0YXR0cpSTlIwIX19tYWluX1+UjAZQYXJzZXKUk5QpgZR9lCiMDnByZWZpeF9jb250ZXh0lIiMBWtfb2JzlEsBjAlncHRfZXBvY2iUjAZsYXRlc3SUjAVrX2FjdJROjAdsb2diYXNllIwFbG9ncy+UjAh2aXNfZnJlcZRLMowXbWF4X2NvbnRleHRfdHJhbnNpdGlvbnOUSwWMBmNvbW1pdJSMLTE2ZjIxMmYwMTA1OWVkNjhlZTMzNzMxOGVjZmM0YTU3ZDMxYmRjYTQgbWFpbpSMCmJlYW1fd2lkdGiUS4CMEWdlbmVyYXRlX2V4cF9uYW1llGgCaAZoFIaUUpSMDGdwdF9sb2FkcGF0aJSMCWdwdC9henVyZZSMCnBlcmNlbnRpbGWUjARtZWFulIwIcmVuZGVyZXKUjAhSZW5kZXJlcpSMB3ZlcmJvc2WUiIwIZXhwX25hbWWUjCBwbGFucy9kZWZhdWx0cy9mcmVxMV9IMTVfYmVhbTEyOJSMBnByZWZpeJSMD3BsYW5zL2RlZmF1bHRzL5SMCHNhdmVwYXRolIwwbG9ncy9mb3JleC12MC9wbGFucy9kZWZhdWx0cy9mcmVxMV9IMTVfYmVhbTEyOC8wlIwIc2V0X3NlZWSUaAJoBmgkhpRSlIwJc2F2ZV9kaWZmlGgCaAZoJ4aUUpSMBmNvbmZpZ5SMDmNvbmZpZy5vZmZsaW5llIwJcGxhbl9mcmVxlEsBjAZzdWZmaXiUjAEwlIwFbWtkaXKUaAJoBmgvhpRSlIwKYWRkX2V4dHJhc5RoAmgGaDKGlFKUjApnZXRfY29tbWl0lGgCaAZoNYaUUpSMB2NkZl9vYnOUTowHY2RmX2FjdJRHP+MzMzMzMzOMB2hvcml6b26USw+MBmRldmljZZSMBGN1ZGGUjAhuX2V4cGFuZJRLAowLcmVhZF9jb25maWeUaAJoBmg+hpRSlIwHZGF0YXNldJSMCGZvcmV4LXYwlHViaCSGlFKULg=="
+     },
+     "suffix": "0",
+     "verbose": true,
+diff --git a/logs/forex-v0/plans/defaults/freq1_H15_beam128/0/diff.txt b/logs/forex-v0/plans/defaults/freq1_H15_beam128/0/diff.txt
+index 6c69f6b..c30ee70 100644
+--- a/logs/forex-v0/plans/defaults/freq1_H15_beam128/0/diff.txt
++++ b/logs/forex-v0/plans/defaults/freq1_H15_beam128/0/diff.txt
+@@ -1,244 +1,71 @@
+-diff --git a/Trajectory_Transformer/config/offline.py b/Trajectory_Transformer/config/offline.py
+-index 1dd7eb6..98c4875 100644
+---- a/Trajectory_Transformer/config/offline.py
+-+++ b/Trajectory_Transformer/config/offline.py
+-@@ -17,7 +17,7 @@ args_to_watch = [
+- base = {
+- 
+-     'train': {
+--        'N': 100,
+-+        'N': 20,
+-         'discount': 0.99,
+-         'n_layer': 4,
+-         'n_head': 4,
+-diff --git a/Trajectory_Transformer/scripts/plan.py b/Trajectory_Transformer/scripts/plan.py
+-index 881688c..f06654a 100644
+---- a/Trajectory_Transformer/scripts/plan.py
+-+++ b/Trajectory_Transformer/scripts/plan.py
+-@@ -1,10 +1,15 @@
+- import json
+- import pdb
+-+import os
+-+import sys
+- from os.path import join
+- import gym
+- import gym_anytrading
+-+import numpy as np
+- from gym_anytrading.envs import TradingEnv, ForexEnv, StocksEnv, Actions, Positions 
+- from gym_anytrading.datasets import FOREX_EURUSD_1H_ASK, STOCKS_GOOGL
+-+parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+-+sys.path.insert(0, parent_dir)
+- import trajectory.utils as utils
+- import trajectory.datasets as datasets
+- from trajectory.search import (
+-@@ -39,7 +44,7 @@ gpt, gpt_epoch = utils.load_model(args.logbase, args.dataset, args.gpt_loadpath,
+- #######################
+- 
+- env = gym.make(args.dataset, frame_bound=(50, 100), window_size=10)
+--renderer = utils.make_renderer(args)
+-+#renderer = utils.make_renderer(args)
+- timer = utils.timer.Timer()
+- 
+- discretizer = dataset.discretizer
+-@@ -48,7 +53,7 @@ observation_dim = dataset.observation_dim
+- action_dim = dataset.action_dim
+- 
+- value_fn = lambda x: discretizer.value_fn(x, args.percentile)
+--preprocess_fn = datasets.get_preprocess_fn(env.name)
+-+#preprocess_fn = datasets.get_preprocess_fn(env.name)
+- 
+- #######################
+- ###### main loop ######
+-@@ -63,10 +68,11 @@ rollout = [observation.copy()]
+- ## previous (tokenized) transitions for conditioning transformer
+- context = []
+- 
+--T = env.max_episode_steps
+-+T = 1000000
+- for t in range(T):
+- 
+--    observation = preprocess_fn(observation)
+-+    #observation = preprocess_fn(observation)
+-+    observation = observation.reshape(-1)
+- 
+-     if t % args.plan_freq == 0:
+-         ## concatenate previous transitions and current observations to input to model
+-@@ -90,18 +96,18 @@ for t in range(T):
+-     action = extract_actions(sequence_recon, observation_dim, action_dim, t=0)
+- 
+-     ## execute action in environment
+--    next_observation, reward, terminal, _ = env.step(action)
+-+    next_observation, reward, terminal, info = env.step(np.argmax(action))
+- 
+-     ## update return
+-     total_reward += reward
+--    score = env.get_normalized_score(total_reward)
+-+    #score = env.get_normalized_score(total_reward)
+- 
+-     ## update rollout observations and context transitions
+-     rollout.append(next_observation.copy())
+-     context = update_context(context, discretizer, observation, action, reward, args.max_context_transitions)
+- 
+-     print(
+--        f'[ plan ] t: {t} / {T} | r: {reward:.2f} | R: {total_reward:.2f} | score: {score:.4f} | '
+-+        f'[ plan ] t: {t} / {T} | r: {reward:.2f} | R: {total_reward:.2f} '
+-         f'time: {timer():.2f} | {args.dataset} | {args.exp_name} | {args.suffix}\n'
+-     )
+- 
+-@@ -114,11 +120,13 @@ for t in range(T):
+-     #    ## save rollout thus far
+-     #    renderer.render_rollout(join(args.savepath, f'rollout.mp4'), rollout, fps=80)
+- 
+--    if terminal: break
+-+    if terminal: 
+-+        print(info)
+-+        break
+- 
+-     observation = next_observation
+- 
+- ## save result as a json file
+- json_path = join(args.savepath, 'rollout.json')
+--json_data = {'score': score, 'step': t, 'return': total_reward, 'term': terminal, 'gpt_epoch': gpt_epoch}
+-+json_data = {'step': t, 'return': total_reward, 'term': terminal, 'gpt_epoch': gpt_epoch}
+- json.dump(json_data, open(json_path, 'w'), indent=2, sort_keys=True)
+-diff --git a/Trajectory_Transformer/scripts/train.py b/Trajectory_Transformer/scripts/train.py
+-index ddcda7a..9a2273b 100644
+---- a/Trajectory_Transformer/scripts/train.py
+-+++ b/Trajectory_Transformer/scripts/train.py
+-@@ -2,11 +2,17 @@ import os
+- import numpy as np
+- import torch
+- import pdb
+-+import sys
+-+
+-+parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+-+sys.path.insert(0, parent_dir)
+- 
+- import trajectory.utils as utils
+- import trajectory.datasets as datasets
+- from trajectory.models.transformers import GPT
+- 
+-+os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+-+os.environ["CUDA_VISIBLE_DEVICES"] = '2'
+- 
+- class Parser(utils.Parser):
+-     dataset: str = 'forex-v0'
+-@@ -31,7 +37,7 @@ dataset_config = utils.Config(
+-     savepath=(args.savepath, 'data_config.pkl'),
+-     env=args.dataset,
+-     N=args.N,
+--    penalty=args.termination_penalty,
+-+    penalty=None,
+-     sequence_length=sequence_length,
+-     step=args.step,
+-     discount=args.discount,
+-@@ -104,7 +110,8 @@ trainer = trainer_config()
+- #######################
+- 
+- ## scale number of epochs to keep number of updates constant
+--n_epochs = int(1e6 / len(dataset) * args.n_epochs_ref)
+-+#n_epochs = int(1e6 / len(dataset) * args.n_epochs_ref)
+-+n_epochs = 3000
+- save_freq = int(n_epochs // args.n_saves)
+- 
+- for epoch in range(n_epochs):
+-diff --git a/Trajectory_Transformer/trajectory/datasets/Random/forex-v0_random.pkl b/Trajectory_Transformer/trajectory/datasets/Random/forex-v0_random.pkl
+-deleted file mode 100644
+-index fa97c75..0000000
+-Binary files a/Trajectory_Transformer/trajectory/datasets/Random/forex-v0_random.pkl and /dev/null differ
+-diff --git a/Trajectory_Transformer/trajectory/datasets/Random/gen_data.py b/Trajectory_Transformer/trajectory/datasets/Random/gen_data.py
+-index 71bfb7e..bbd08e4 100644
+---- a/Trajectory_Transformer/trajectory/datasets/Random/gen_data.py
+-+++ b/Trajectory_Transformer/trajectory/datasets/Random/gen_data.py
+-@@ -13,7 +13,7 @@ env = gym.make('forex-v0', frame_bound=(50, 100), window_size=10)
+- action_dim = env.action_space.n
+- 
+- episode = 10
+--
+-+T = 0
+- episode_data = {}
+- for k in ['observations', 'next_observations', 'actions', 'rewards', 'terminals']:
+-     episode_data[k] = []
+-@@ -25,13 +25,12 @@ for _ in range(episode):
+-         episode_data['observations'].append(observation.reshape(-1).astype('float32'))
+-         episode_data['next_observations'].append(next_observation.reshape(-1).astype('float32'))
+-         episode_data['actions'].append(action)
+--        episode_data['rewards'].append(np.array(reward).astype('float32'))
+-+        episode_data['rewards'].append(np.array([reward]).astype('float32'))
+-         episode_data['terminals'].append(done)
+-         if done:
+-             break
+- 
+- for k in ['observations', 'next_observations', 'actions', 'rewards', 'terminals']:
+-     episode_data[k] = np.stack(episode_data[k])
+--
+--with open('trajectory-transformer/trajectory/datasets/Random/{}_'.format(quat_type) + '_random.pkl', 'wb') as f:
+-+with open('/home/kjlin0508/Course_work/AI_Intro/RL_for_Quatitatitive_Trading/Trajectory_Transformer/trajectory/datasets/Random/{}_r'.format(quat_type) + '.pkl', 'wb') as f:
+-     pickle.dump(episode_data, f)
+-\ No newline at end of file
+-diff --git a/Trajectory_Transformer/trajectory/datasets/__init__.py b/Trajectory_Transformer/trajectory/datasets/__init__.py
+-index 69ee58d..d1062c5 100644
+---- a/Trajectory_Transformer/trajectory/datasets/__init__.py
+-+++ b/Trajectory_Transformer/trajectory/datasets/__init__.py
+-@@ -1,3 +1,3 @@
+--from .d4rl import load_environment
+-+#from .d4rl import load_environment
+- from .sequence import *
+- from .preprocessing import get_preprocess_fn
+-diff --git a/Trajectory_Transformer/trajectory/datasets/sequence.py b/Trajectory_Transformer/trajectory/datasets/sequence.py
+-index c23b4f3..4525194 100644
+---- a/Trajectory_Transformer/trajectory/datasets/sequence.py
+-+++ b/Trajectory_Transformer/trajectory/datasets/sequence.py
+-@@ -53,7 +53,7 @@ class SequenceDataset(torch.utils.data.Dataset):
+-         self.device = device
+-         
+-         print(f'[ datasets/sequence ] Loading...', end=' ', flush=True)
+--        with open('trajectory-transformer/trajectory/datasets/Random'+env+'.pkl', 'rb') as f:
+-+        with open('Trajectory_Transformer/trajectory/datasets/Random/'+env+'.pkl', 'rb') as f:
+-             dataset = pickle.load(f)
+-         print('✓')
+- 
+-@@ -69,7 +69,6 @@ class SequenceDataset(torch.utils.data.Dataset):
+-         terminals = dataset['terminals']
+-         realterminals = [False]*len(dataset['terminals'])
+- 
+--        #observations = np.reshape(observations, (100, 7000))
+-         self.observations_raw = observations
+-         self.actions_raw = actions
+-         self.next_observations_raw = next_observations
+-diff --git a/Trajectory_Transformer/trajectory/utils/__init__.py b/Trajectory_Transformer/trajectory/utils/__init__.py
+-index 7c596c3..7529384 100644
+---- a/Trajectory_Transformer/trajectory/utils/__init__.py
+-+++ b/Trajectory_Transformer/trajectory/utils/__init__.py
+-@@ -2,7 +2,7 @@ from .setup import Parser, watch
+- from .arrays import *
+- from .serialization import *
+- from .progress import Progress, Silent
+--from .rendering import make_renderer
+-+#from .rendering import make_renderer
+- # from .video import *
+- from .config import Config
+- from .training import Trainer
+-diff --git a/requirements.txt b/requirements.txt
+-index ece16ed..a579177 100644
+---- a/requirements.txt
+-+++ b/requirements.txt
+-@@ -1,14 +1,16 @@
+- numpy
+- gym
+- numpy
+--torch
+-+pytorch==1.12.1
+-+torchvision==0.13.1 
+-+torchaudio==0.12.1
+- transformers==4.5.1
+- wandb==0.9.1
+- tensorboard
+- pyprind
+- tensorflow
+- gin-config
+--gym
+-+gym==0.21.0
+- tqdm
+- blosc
+- git+https://github.com/google/dopamine.git
+\ No newline at end of file
++diff --git a/logs/forex-v0/plans/defaults/freq1_H15_beam128/0/args.json b/logs/forex-v0/plans/defaults/freq1_H15_beam128/0/args.json
++index f42cef8..0e84897 100644
++--- a/logs/forex-v0/plans/defaults/freq1_H15_beam128/0/args.json
+++++ b/logs/forex-v0/plans/defaults/freq1_H15_beam128/0/args.json
++@@ -1,23 +1,23 @@
++ {
++     "add_extras": {
++         "_type": "python_object (type = method)",
++-        "_value": "gASVAgMAAAAAAACMCGJ1aWx0aW5zlIwHZ2V0YXR0cpSTlIwIX19tYWluX1+UjAZQYXJzZXKUk5QpgZR9lCiMB2hvcml6b26USw+MB3ZlcmJvc2WUiIwIcmVuZGVyZXKUjAhSZW5kZXJlcpSMB2NkZl9hY3SURz/jMzMzMzMzjApwZXJjZW50aWxllIwEbWVhbpSMCHNldF9zZWVklGgCaAZoD4aUUpSMCHZpc19mcmVxlEsyjAdjZGZfb2JzlE6MBmNvbW1pdJSMLTIwNWY2YjYxZWNlYTYyYTg5OWJkNDk0ZmFhYjE0NTlhNjJlYTU1MjUgbWFpbpSMCXNhdmVfZGlmZpRoAmgGaBaGlFKUjAZzdWZmaXiUjAEwlIwJcGxhbl9mcmVxlEsBjA5wcmVmaXhfY29udGV4dJSIjApiZWFtX3dpZHRolEuAjAphZGRfZXh0cmFzlGgCaAZoHoaUUpSMB2RhdGFzZXSUjAhmb3JleC12MJSMCGV4cF9uYW1llIwgcGxhbnMvZGVmYXVsdHMvZnJlcTFfSDE1X2JlYW0xMjiUjAhuX2V4cGFuZJRLAowGcHJlZml4lIwPcGxhbnMvZGVmYXVsdHMvlIwFa19vYnOUSwGMF21heF9jb250ZXh0X3RyYW5zaXRpb25zlEsFjBFnZW5lcmF0ZV9leHBfbmFtZZRoAmgGaCqGlFKUjAZkZXZpY2WUjARjdWRhlIwMZ3B0X2xvYWRwYXRolIwJZ3B0L2F6dXJllIwKZ2V0X2NvbW1pdJRoAmgGaDGGlFKUjAtyZWFkX2NvbmZpZ5RoAmgGaDSGlFKUjAVrX2FjdJROjAlncHRfZXBvY2iUjAZsYXRlc3SUjAZjb25maWeUjA5jb25maWcub2ZmbGluZZSMB2xvZ2Jhc2WUjAVsb2dzL5SMBW1rZGlylGgCaAZoPoaUUpSMCHNhdmVwYXRolIwwbG9ncy9mb3JleC12MC9wbGFucy9kZWZhdWx0cy9mcmVxMV9IMTVfYmVhbTEyOC8wlHViaB6GlFKULg=="
+++        "_value": "gASVAgMAAAAAAACMCGJ1aWx0aW5zlIwHZ2V0YXR0cpSTlIwIX19tYWluX1+UjAZQYXJzZXKUk5QpgZR9lCiMDnByZWZpeF9jb250ZXh0lIiMBWtfb2JzlEsBjAlncHRfZXBvY2iUjAZsYXRlc3SUjAVrX2FjdJROjAdsb2diYXNllIwFbG9ncy+UjAh2aXNfZnJlcZRLMowXbWF4X2NvbnRleHRfdHJhbnNpdGlvbnOUSwWMBmNvbW1pdJSMLTE2ZjIxMmYwMTA1OWVkNjhlZTMzNzMxOGVjZmM0YTU3ZDMxYmRjYTQgbWFpbpSMCmJlYW1fd2lkdGiUS4CMEWdlbmVyYXRlX2V4cF9uYW1llGgCaAZoFIaUUpSMDGdwdF9sb2FkcGF0aJSMCWdwdC9henVyZZSMCnBlcmNlbnRpbGWUjARtZWFulIwIcmVuZGVyZXKUjAhSZW5kZXJlcpSMB3ZlcmJvc2WUiIwIZXhwX25hbWWUjCBwbGFucy9kZWZhdWx0cy9mcmVxMV9IMTVfYmVhbTEyOJSMBnByZWZpeJSMD3BsYW5zL2RlZmF1bHRzL5SMCHNhdmVwYXRolIwwbG9ncy9mb3JleC12MC9wbGFucy9kZWZhdWx0cy9mcmVxMV9IMTVfYmVhbTEyOC8wlIwIc2V0X3NlZWSUaAJoBmgkhpRSlIwJc2F2ZV9kaWZmlGgCaAZoJ4aUUpSMBmNvbmZpZ5SMDmNvbmZpZy5vZmZsaW5llIwJcGxhbl9mcmVxlEsBjAZzdWZmaXiUjAEwlIwFbWtkaXKUaAJoBmgvhpRSlIwKYWRkX2V4dHJhc5RoAmgGaDKGlFKUjApnZXRfY29tbWl0lGgCaAZoNYaUUpSMB2NkZl9vYnOUTowHY2RmX2FjdJRHP+MzMzMzMzOMB2hvcml6b26USw+MBmRldmljZZSMBGN1ZGGUjAhuX2V4cGFuZJRLAowLcmVhZF9jb25maWeUaAJoBmg+hpRSlIwHZGF0YXNldJSMCGZvcmV4LXYwlHViaDKGlFKULg=="
++     },
++     "beam_width": 128,
++     "cdf_act": 0.6,
++     "cdf_obs": null,
++-    "commit": "205f6b61ecea62a899bd494faab1459a62ea5525 main",
+++    "commit": "16f212f01059ed68ee337318ecfc4a57d31bdca4 main",
++     "config": "config.offline",
++     "dataset": "forex-v0",
++     "device": "cuda",
++     "exp_name": "plans/defaults/freq1_H15_beam128",
++     "generate_exp_name": {
++         "_type": "python_object (type = method)",
++-        "_value": "gASVAgMAAAAAAACMCGJ1aWx0aW5zlIwHZ2V0YXR0cpSTlIwIX19tYWluX1+UjAZQYXJzZXKUk5QpgZR9lCiMB2hvcml6b26USw+MB3ZlcmJvc2WUiIwIcmVuZGVyZXKUjAhSZW5kZXJlcpSMB2NkZl9hY3SURz/jMzMzMzMzjApwZXJjZW50aWxllIwEbWVhbpSMCHNldF9zZWVklGgCaAZoD4aUUpSMCHZpc19mcmVxlEsyjAdjZGZfb2JzlE6MBmNvbW1pdJSMLTIwNWY2YjYxZWNlYTYyYTg5OWJkNDk0ZmFhYjE0NTlhNjJlYTU1MjUgbWFpbpSMCXNhdmVfZGlmZpRoAmgGaBaGlFKUjAZzdWZmaXiUjAEwlIwJcGxhbl9mcmVxlEsBjA5wcmVmaXhfY29udGV4dJSIjApiZWFtX3dpZHRolEuAjAphZGRfZXh0cmFzlGgCaAZoHoaUUpSMB2RhdGFzZXSUjAhmb3JleC12MJSMCGV4cF9uYW1llIwgcGxhbnMvZGVmYXVsdHMvZnJlcTFfSDE1X2JlYW0xMjiUjAhuX2V4cGFuZJRLAowGcHJlZml4lIwPcGxhbnMvZGVmYXVsdHMvlIwFa19vYnOUSwGMF21heF9jb250ZXh0X3RyYW5zaXRpb25zlEsFjBFnZW5lcmF0ZV9leHBfbmFtZZRoAmgGaCqGlFKUjAZkZXZpY2WUjARjdWRhlIwMZ3B0X2xvYWRwYXRolIwJZ3B0L2F6dXJllIwKZ2V0X2NvbW1pdJRoAmgGaDGGlFKUjAtyZWFkX2NvbmZpZ5RoAmgGaDSGlFKUjAVrX2FjdJROjAlncHRfZXBvY2iUjAZsYXRlc3SUjAZjb25maWeUjA5jb25maWcub2ZmbGluZZSMB2xvZ2Jhc2WUjAVsb2dzL5SMBW1rZGlylGgCaAZoPoaUUpSMCHNhdmVwYXRolIwwbG9ncy9mb3JleC12MC9wbGFucy9kZWZhdWx0cy9mcmVxMV9IMTVfYmVhbTEyOC8wlHViaCqGlFKULg=="
+++        "_value": "gASVAgMAAAAAAACMCGJ1aWx0aW5zlIwHZ2V0YXR0cpSTlIwIX19tYWluX1+UjAZQYXJzZXKUk5QpgZR9lCiMDnByZWZpeF9jb250ZXh0lIiMBWtfb2JzlEsBjAlncHRfZXBvY2iUjAZsYXRlc3SUjAVrX2FjdJROjAdsb2diYXNllIwFbG9ncy+UjAh2aXNfZnJlcZRLMowXbWF4X2NvbnRleHRfdHJhbnNpdGlvbnOUSwWMBmNvbW1pdJSMLTE2ZjIxMmYwMTA1OWVkNjhlZTMzNzMxOGVjZmM0YTU3ZDMxYmRjYTQgbWFpbpSMCmJlYW1fd2lkdGiUS4CMEWdlbmVyYXRlX2V4cF9uYW1llGgCaAZoFIaUUpSMDGdwdF9sb2FkcGF0aJSMCWdwdC9henVyZZSMCnBlcmNlbnRpbGWUjARtZWFulIwIcmVuZGVyZXKUjAhSZW5kZXJlcpSMB3ZlcmJvc2WUiIwIZXhwX25hbWWUjCBwbGFucy9kZWZhdWx0cy9mcmVxMV9IMTVfYmVhbTEyOJSMBnByZWZpeJSMD3BsYW5zL2RlZmF1bHRzL5SMCHNhdmVwYXRolIwwbG9ncy9mb3JleC12MC9wbGFucy9kZWZhdWx0cy9mcmVxMV9IMTVfYmVhbTEyOC8wlIwIc2V0X3NlZWSUaAJoBmgkhpRSlIwJc2F2ZV9kaWZmlGgCaAZoJ4aUUpSMBmNvbmZpZ5SMDmNvbmZpZy5vZmZsaW5llIwJcGxhbl9mcmVxlEsBjAZzdWZmaXiUjAEwlIwFbWtkaXKUaAJoBmgvhpRSlIwKYWRkX2V4dHJhc5RoAmgGaDKGlFKUjApnZXRfY29tbWl0lGgCaAZoNYaUUpSMB2NkZl9vYnOUTowHY2RmX2FjdJRHP+MzMzMzMzOMB2hvcml6b26USw+MBmRldmljZZSMBGN1ZGGUjAhuX2V4cGFuZJRLAowLcmVhZF9jb25maWeUaAJoBmg+hpRSlIwHZGF0YXNldJSMCGZvcmV4LXYwlHViaBSGlFKULg=="
++     },
++     "get_commit": {
++         "_type": "python_object (type = method)",
++-        "_value": "gASVAgMAAAAAAACMCGJ1aWx0aW5zlIwHZ2V0YXR0cpSTlIwIX19tYWluX1+UjAZQYXJzZXKUk5QpgZR9lCiMB2hvcml6b26USw+MB3ZlcmJvc2WUiIwIcmVuZGVyZXKUjAhSZW5kZXJlcpSMB2NkZl9hY3SURz/jMzMzMzMzjApwZXJjZW50aWxllIwEbWVhbpSMCHNldF9zZWVklGgCaAZoD4aUUpSMCHZpc19mcmVxlEsyjAdjZGZfb2JzlE6MBmNvbW1pdJSMLTIwNWY2YjYxZWNlYTYyYTg5OWJkNDk0ZmFhYjE0NTlhNjJlYTU1MjUgbWFpbpSMCXNhdmVfZGlmZpRoAmgGaBaGlFKUjAZzdWZmaXiUjAEwlIwJcGxhbl9mcmVxlEsBjA5wcmVmaXhfY29udGV4dJSIjApiZWFtX3dpZHRolEuAjAphZGRfZXh0cmFzlGgCaAZoHoaUUpSMB2RhdGFzZXSUjAhmb3JleC12MJSMCGV4cF9uYW1llIwgcGxhbnMvZGVmYXVsdHMvZnJlcTFfSDE1X2JlYW0xMjiUjAhuX2V4cGFuZJRLAowGcHJlZml4lIwPcGxhbnMvZGVmYXVsdHMvlIwFa19vYnOUSwGMF21heF9jb250ZXh0X3RyYW5zaXRpb25zlEsFjBFnZW5lcmF0ZV9leHBfbmFtZZRoAmgGaCqGlFKUjAZkZXZpY2WUjARjdWRhlIwMZ3B0X2xvYWRwYXRolIwJZ3B0L2F6dXJllIwKZ2V0X2NvbW1pdJRoAmgGaDGGlFKUjAtyZWFkX2NvbmZpZ5RoAmgGaDSGlFKUjAVrX2FjdJROjAlncHRfZXBvY2iUjAZsYXRlc3SUjAZjb25maWeUjA5jb25maWcub2ZmbGluZZSMB2xvZ2Jhc2WUjAVsb2dzL5SMBW1rZGlylGgCaAZoPoaUUpSMCHNhdmVwYXRolIwwbG9ncy9mb3JleC12MC9wbGFucy9kZWZhdWx0cy9mcmVxMV9IMTVfYmVhbTEyOC8wlHViaDGGlFKULg=="
+++        "_value": "gASVAgMAAAAAAACMCGJ1aWx0aW5zlIwHZ2V0YXR0cpSTlIwIX19tYWluX1+UjAZQYXJzZXKUk5QpgZR9lCiMDnByZWZpeF9jb250ZXh0lIiMBWtfb2JzlEsBjAlncHRfZXBvY2iUjAZsYXRlc3SUjAVrX2FjdJROjAdsb2diYXNllIwFbG9ncy+UjAh2aXNfZnJlcZRLMowXbWF4X2NvbnRleHRfdHJhbnNpdGlvbnOUSwWMBmNvbW1pdJSMLTE2ZjIxMmYwMTA1OWVkNjhlZTMzNzMxOGVjZmM0YTU3ZDMxYmRjYTQgbWFpbpSMCmJlYW1fd2lkdGiUS4CMEWdlbmVyYXRlX2V4cF9uYW1llGgCaAZoFIaUUpSMDGdwdF9sb2FkcGF0aJSMCWdwdC9henVyZZSMCnBlcmNlbnRpbGWUjARtZWFulIwIcmVuZGVyZXKUjAhSZW5kZXJlcpSMB3ZlcmJvc2WUiIwIZXhwX25hbWWUjCBwbGFucy9kZWZhdWx0cy9mcmVxMV9IMTVfYmVhbTEyOJSMBnByZWZpeJSMD3BsYW5zL2RlZmF1bHRzL5SMCHNhdmVwYXRolIwwbG9ncy9mb3JleC12MC9wbGFucy9kZWZhdWx0cy9mcmVxMV9IMTVfYmVhbTEyOC8wlIwIc2V0X3NlZWSUaAJoBmgkhpRSlIwJc2F2ZV9kaWZmlGgCaAZoJ4aUUpSMBmNvbmZpZ5SMDmNvbmZpZy5vZmZsaW5llIwJcGxhbl9mcmVxlEsBjAZzdWZmaXiUjAEwlIwFbWtkaXKUaAJoBmgvhpRSlIwKYWRkX2V4dHJhc5RoAmgGaDKGlFKUjApnZXRfY29tbWl0lGgCaAZoNYaUUpSMB2NkZl9vYnOUTowHY2RmX2FjdJRHP+MzMzMzMzOMB2hvcml6b26USw+MBmRldmljZZSMBGN1ZGGUjAhuX2V4cGFuZJRLAowLcmVhZF9jb25maWeUaAJoBmg+hpRSlIwHZGF0YXNldJSMCGZvcmV4LXYwlHViaDWGlFKULg=="
++     },
++     "gpt_epoch": "latest",
++     "gpt_loadpath": "gpt/azure",
++@@ -28,7 +28,7 @@
++     "max_context_transitions": 5,
++     "mkdir": {
++         "_type": "python_object (type = method)",
++-        "_value": "gASVAgMAAAAAAACMCGJ1aWx0aW5zlIwHZ2V0YXR0cpSTlIwIX19tYWluX1+UjAZQYXJzZXKUk5QpgZR9lCiMB2hvcml6b26USw+MB3ZlcmJvc2WUiIwIcmVuZGVyZXKUjAhSZW5kZXJlcpSMB2NkZl9hY3SURz/jMzMzMzMzjApwZXJjZW50aWxllIwEbWVhbpSMCHNldF9zZWVklGgCaAZoD4aUUpSMCHZpc19mcmVxlEsyjAdjZGZfb2JzlE6MBmNvbW1pdJSMLTIwNWY2YjYxZWNlYTYyYTg5OWJkNDk0ZmFhYjE0NTlhNjJlYTU1MjUgbWFpbpSMCXNhdmVfZGlmZpRoAmgGaBaGlFKUjAZzdWZmaXiUjAEwlIwJcGxhbl9mcmVxlEsBjA5wcmVmaXhfY29udGV4dJSIjApiZWFtX3dpZHRolEuAjAphZGRfZXh0cmFzlGgCaAZoHoaUUpSMB2RhdGFzZXSUjAhmb3JleC12MJSMCGV4cF9uYW1llIwgcGxhbnMvZGVmYXVsdHMvZnJlcTFfSDE1X2JlYW0xMjiUjAhuX2V4cGFuZJRLAowGcHJlZml4lIwPcGxhbnMvZGVmYXVsdHMvlIwFa19vYnOUSwGMF21heF9jb250ZXh0X3RyYW5zaXRpb25zlEsFjBFnZW5lcmF0ZV9leHBfbmFtZZRoAmgGaCqGlFKUjAZkZXZpY2WUjARjdWRhlIwMZ3B0X2xvYWRwYXRolIwJZ3B0L2F6dXJllIwKZ2V0X2NvbW1pdJRoAmgGaDGGlFKUjAtyZWFkX2NvbmZpZ5RoAmgGaDSGlFKUjAVrX2FjdJROjAlncHRfZXBvY2iUjAZsYXRlc3SUjAZjb25maWeUjA5jb25maWcub2ZmbGluZZSMB2xvZ2Jhc2WUjAVsb2dzL5SMBW1rZGlylGgCaAZoPoaUUpSMCHNhdmVwYXRolIwwbG9ncy9mb3JleC12MC9wbGFucy9kZWZhdWx0cy9mcmVxMV9IMTVfYmVhbTEyOC8wlHViaD6GlFKULg=="
+++        "_value": "gASVAgMAAAAAAACMCGJ1aWx0aW5zlIwHZ2V0YXR0cpSTlIwIX19tYWluX1+UjAZQYXJzZXKUk5QpgZR9lCiMDnByZWZpeF9jb250ZXh0lIiMBWtfb2JzlEsBjAlncHRfZXBvY2iUjAZsYXRlc3SUjAVrX2FjdJROjAdsb2diYXNllIwFbG9ncy+UjAh2aXNfZnJlcZRLMowXbWF4X2NvbnRleHRfdHJhbnNpdGlvbnOUSwWMBmNvbW1pdJSMLTE2ZjIxMmYwMTA1OWVkNjhlZTMzNzMxOGVjZmM0YTU3ZDMxYmRjYTQgbWFpbpSMCmJlYW1fd2lkdGiUS4CMEWdlbmVyYXRlX2V4cF9uYW1llGgCaAZoFIaUUpSMDGdwdF9sb2FkcGF0aJSMCWdwdC9henVyZZSMCnBlcmNlbnRpbGWUjARtZWFulIwIcmVuZGVyZXKUjAhSZW5kZXJlcpSMB3ZlcmJvc2WUiIwIZXhwX25hbWWUjCBwbGFucy9kZWZhdWx0cy9mcmVxMV9IMTVfYmVhbTEyOJSMBnByZWZpeJSMD3BsYW5zL2RlZmF1bHRzL5SMCHNhdmVwYXRolIwwbG9ncy9mb3JleC12MC9wbGFucy9kZWZhdWx0cy9mcmVxMV9IMTVfYmVhbTEyOC8wlIwIc2V0X3NlZWSUaAJoBmgkhpRSlIwJc2F2ZV9kaWZmlGgCaAZoJ4aUUpSMBmNvbmZpZ5SMDmNvbmZpZy5vZmZsaW5llIwJcGxhbl9mcmVxlEsBjAZzdWZmaXiUjAEwlIwFbWtkaXKUaAJoBmgvhpRSlIwKYWRkX2V4dHJhc5RoAmgGaDKGlFKUjApnZXRfY29tbWl0lGgCaAZoNYaUUpSMB2NkZl9vYnOUTowHY2RmX2FjdJRHP+MzMzMzMzOMB2hvcml6b26USw+MBmRldmljZZSMBGN1ZGGUjAhuX2V4cGFuZJRLAowLcmVhZF9jb25maWeUaAJoBmg+hpRSlIwHZGF0YXNldJSMCGZvcmV4LXYwlHViaC+GlFKULg=="
++     },
++     "n_expand": 2,
++     "percentile": "mean",
++@@ -37,24 +37,24 @@
++     "prefix_context": true,
++     "read_config": {
++         "_type": "python_object (type = method)",
++-        "_value": "gASVAgMAAAAAAACMCGJ1aWx0aW5zlIwHZ2V0YXR0cpSTlIwIX19tYWluX1+UjAZQYXJzZXKUk5QpgZR9lCiMB2hvcml6b26USw+MB3ZlcmJvc2WUiIwIcmVuZGVyZXKUjAhSZW5kZXJlcpSMB2NkZl9hY3SURz/jMzMzMzMzjApwZXJjZW50aWxllIwEbWVhbpSMCHNldF9zZWVklGgCaAZoD4aUUpSMCHZpc19mcmVxlEsyjAdjZGZfb2JzlE6MBmNvbW1pdJSMLTIwNWY2YjYxZWNlYTYyYTg5OWJkNDk0ZmFhYjE0NTlhNjJlYTU1MjUgbWFpbpSMCXNhdmVfZGlmZpRoAmgGaBaGlFKUjAZzdWZmaXiUjAEwlIwJcGxhbl9mcmVxlEsBjA5wcmVmaXhfY29udGV4dJSIjApiZWFtX3dpZHRolEuAjAphZGRfZXh0cmFzlGgCaAZoHoaUUpSMB2RhdGFzZXSUjAhmb3JleC12MJSMCGV4cF9uYW1llIwgcGxhbnMvZGVmYXVsdHMvZnJlcTFfSDE1X2JlYW0xMjiUjAhuX2V4cGFuZJRLAowGcHJlZml4lIwPcGxhbnMvZGVmYXVsdHMvlIwFa19vYnOUSwGMF21heF9jb250ZXh0X3RyYW5zaXRpb25zlEsFjBFnZW5lcmF0ZV9leHBfbmFtZZRoAmgGaCqGlFKUjAZkZXZpY2WUjARjdWRhlIwMZ3B0X2xvYWRwYXRolIwJZ3B0L2F6dXJllIwKZ2V0X2NvbW1pdJRoAmgGaDGGlFKUjAtyZWFkX2NvbmZpZ5RoAmgGaDSGlFKUjAVrX2FjdJROjAlncHRfZXBvY2iUjAZsYXRlc3SUjAZjb25maWeUjA5jb25maWcub2ZmbGluZZSMB2xvZ2Jhc2WUjAVsb2dzL5SMBW1rZGlylGgCaAZoPoaUUpSMCHNhdmVwYXRolIwwbG9ncy9mb3JleC12MC9wbGFucy9kZWZhdWx0cy9mcmVxMV9IMTVfYmVhbTEyOC8wlHViaDSGlFKULg=="
+++        "_value": "gASVAgMAAAAAAACMCGJ1aWx0aW5zlIwHZ2V0YXR0cpSTlIwIX19tYWluX1+UjAZQYXJzZXKUk5QpgZR9lCiMDnByZWZpeF9jb250ZXh0lIiMBWtfb2JzlEsBjAlncHRfZXBvY2iUjAZsYXRlc3SUjAVrX2FjdJROjAdsb2diYXNllIwFbG9ncy+UjAh2aXNfZnJlcZRLMowXbWF4X2NvbnRleHRfdHJhbnNpdGlvbnOUSwWMBmNvbW1pdJSMLTE2ZjIxMmYwMTA1OWVkNjhlZTMzNzMxOGVjZmM0YTU3ZDMxYmRjYTQgbWFpbpSMCmJlYW1fd2lkdGiUS4CMEWdlbmVyYXRlX2V4cF9uYW1llGgCaAZoFIaUUpSMDGdwdF9sb2FkcGF0aJSMCWdwdC9henVyZZSMCnBlcmNlbnRpbGWUjARtZWFulIwIcmVuZGVyZXKUjAhSZW5kZXJlcpSMB3ZlcmJvc2WUiIwIZXhwX25hbWWUjCBwbGFucy9kZWZhdWx0cy9mcmVxMV9IMTVfYmVhbTEyOJSMBnByZWZpeJSMD3BsYW5zL2RlZmF1bHRzL5SMCHNhdmVwYXRolIwwbG9ncy9mb3JleC12MC9wbGFucy9kZWZhdWx0cy9mcmVxMV9IMTVfYmVhbTEyOC8wlIwIc2V0X3NlZWSUaAJoBmgkhpRSlIwJc2F2ZV9kaWZmlGgCaAZoJ4aUUpSMBmNvbmZpZ5SMDmNvbmZpZy5vZmZsaW5llIwJcGxhbl9mcmVxlEsBjAZzdWZmaXiUjAEwlIwFbWtkaXKUaAJoBmgvhpRSlIwKYWRkX2V4dHJhc5RoAmgGaDKGlFKUjApnZXRfY29tbWl0lGgCaAZoNYaUUpSMB2NkZl9vYnOUTowHY2RmX2FjdJRHP+MzMzMzMzOMB2hvcml6b26USw+MBmRldmljZZSMBGN1ZGGUjAhuX2V4cGFuZJRLAowLcmVhZF9jb25maWeUaAJoBmg+hpRSlIwHZGF0YXNldJSMCGZvcmV4LXYwlHViaD6GlFKULg=="
++     },
++     "renderer": "Renderer",
++     "reproducibility": {
++         "command_line": "python /home/kjlin0508/Course_work/AI_Intro/RL_for_Quatitatitive_Trading/Trajectory_Transformer/scripts/plan.py",
++         "git_has_uncommitted_changes": true,
++         "git_root": "/home/kjlin0508/Course_work/AI_Intro/RL_for_Quatitatitive_Trading",
++-        "git_url": "https://github.com/KJLdefeated/RL_for_Quatitatitive_Trading/tree/205f6b61ecea62a899bd494faab1459a62ea5525",
++-        "time": "Sun May 14 00:30:59 2023"
+++        "git_url": "https://github.com/KJLdefeated/RL_for_Quatitatitive_Trading/tree/16f212f01059ed68ee337318ecfc4a57d31bdca4",
+++        "time": "Tue May 16 00:22:08 2023"
++     },
++     "save_diff": {
++         "_type": "python_object (type = method)",
++-        "_value": "gASVAgMAAAAAAACMCGJ1aWx0aW5zlIwHZ2V0YXR0cpSTlIwIX19tYWluX1+UjAZQYXJzZXKUk5QpgZR9lCiMB2hvcml6b26USw+MB3ZlcmJvc2WUiIwIcmVuZGVyZXKUjAhSZW5kZXJlcpSMB2NkZl9hY3SURz/jMzMzMzMzjApwZXJjZW50aWxllIwEbWVhbpSMCHNldF9zZWVklGgCaAZoD4aUUpSMCHZpc19mcmVxlEsyjAdjZGZfb2JzlE6MBmNvbW1pdJSMLTIwNWY2YjYxZWNlYTYyYTg5OWJkNDk0ZmFhYjE0NTlhNjJlYTU1MjUgbWFpbpSMCXNhdmVfZGlmZpRoAmgGaBaGlFKUjAZzdWZmaXiUjAEwlIwJcGxhbl9mcmVxlEsBjA5wcmVmaXhfY29udGV4dJSIjApiZWFtX3dpZHRolEuAjAphZGRfZXh0cmFzlGgCaAZoHoaUUpSMB2RhdGFzZXSUjAhmb3JleC12MJSMCGV4cF9uYW1llIwgcGxhbnMvZGVmYXVsdHMvZnJlcTFfSDE1X2JlYW0xMjiUjAhuX2V4cGFuZJRLAowGcHJlZml4lIwPcGxhbnMvZGVmYXVsdHMvlIwFa19vYnOUSwGMF21heF9jb250ZXh0X3RyYW5zaXRpb25zlEsFjBFnZW5lcmF0ZV9leHBfbmFtZZRoAmgGaCqGlFKUjAZkZXZpY2WUjARjdWRhlIwMZ3B0X2xvYWRwYXRolIwJZ3B0L2F6dXJllIwKZ2V0X2NvbW1pdJRoAmgGaDGGlFKUjAtyZWFkX2NvbmZpZ5RoAmgGaDSGlFKUjAVrX2FjdJROjAlncHRfZXBvY2iUjAZsYXRlc3SUjAZjb25maWeUjA5jb25maWcub2ZmbGluZZSMB2xvZ2Jhc2WUjAVsb2dzL5SMBW1rZGlylGgCaAZoPoaUUpSMCHNhdmVwYXRolIwwbG9ncy9mb3JleC12MC9wbGFucy9kZWZhdWx0cy9mcmVxMV9IMTVfYmVhbTEyOC8wlHViaBaGlFKULg=="
+++        "_value": "gASVAgMAAAAAAACMCGJ1aWx0aW5zlIwHZ2V0YXR0cpSTlIwIX19tYWluX1+UjAZQYXJzZXKUk5QpgZR9lCiMDnByZWZpeF9jb250ZXh0lIiMBWtfb2JzlEsBjAlncHRfZXBvY2iUjAZsYXRlc3SUjAVrX2FjdJROjAdsb2diYXNllIwFbG9ncy+UjAh2aXNfZnJlcZRLMowXbWF4X2NvbnRleHRfdHJhbnNpdGlvbnOUSwWMBmNvbW1pdJSMLTE2ZjIxMmYwMTA1OWVkNjhlZTMzNzMxOGVjZmM0YTU3ZDMxYmRjYTQgbWFpbpSMCmJlYW1fd2lkdGiUS4CMEWdlbmVyYXRlX2V4cF9uYW1llGgCaAZoFIaUUpSMDGdwdF9sb2FkcGF0aJSMCWdwdC9henVyZZSMCnBlcmNlbnRpbGWUjARtZWFulIwIcmVuZGVyZXKUjAhSZW5kZXJlcpSMB3ZlcmJvc2WUiIwIZXhwX25hbWWUjCBwbGFucy9kZWZhdWx0cy9mcmVxMV9IMTVfYmVhbTEyOJSMBnByZWZpeJSMD3BsYW5zL2RlZmF1bHRzL5SMCHNhdmVwYXRolIwwbG9ncy9mb3JleC12MC9wbGFucy9kZWZhdWx0cy9mcmVxMV9IMTVfYmVhbTEyOC8wlIwIc2V0X3NlZWSUaAJoBmgkhpRSlIwJc2F2ZV9kaWZmlGgCaAZoJ4aUUpSMBmNvbmZpZ5SMDmNvbmZpZy5vZmZsaW5llIwJcGxhbl9mcmVxlEsBjAZzdWZmaXiUjAEwlIwFbWtkaXKUaAJoBmgvhpRSlIwKYWRkX2V4dHJhc5RoAmgGaDKGlFKUjApnZXRfY29tbWl0lGgCaAZoNYaUUpSMB2NkZl9vYnOUTowHY2RmX2FjdJRHP+MzMzMzMzOMB2hvcml6b26USw+MBmRldmljZZSMBGN1ZGGUjAhuX2V4cGFuZJRLAowLcmVhZF9jb25maWeUaAJoBmg+hpRSlIwHZGF0YXNldJSMCGZvcmV4LXYwlHViaCeGlFKULg=="
++     },
++     "savepath": "logs/forex-v0/plans/defaults/freq1_H15_beam128/0",
++     "set_seed": {
++         "_type": "python_object (type = method)",
++-        "_value": "gASVAgMAAAAAAACMCGJ1aWx0aW5zlIwHZ2V0YXR0cpSTlIwIX19tYWluX1+UjAZQYXJzZXKUk5QpgZR9lCiMB2hvcml6b26USw+MB3ZlcmJvc2WUiIwIcmVuZGVyZXKUjAhSZW5kZXJlcpSMB2NkZl9hY3SURz/jMzMzMzMzjApwZXJjZW50aWxllIwEbWVhbpSMCHNldF9zZWVklGgCaAZoD4aUUpSMCHZpc19mcmVxlEsyjAdjZGZfb2JzlE6MBmNvbW1pdJSMLTIwNWY2YjYxZWNlYTYyYTg5OWJkNDk0ZmFhYjE0NTlhNjJlYTU1MjUgbWFpbpSMCXNhdmVfZGlmZpRoAmgGaBaGlFKUjAZzdWZmaXiUjAEwlIwJcGxhbl9mcmVxlEsBjA5wcmVmaXhfY29udGV4dJSIjApiZWFtX3dpZHRolEuAjAphZGRfZXh0cmFzlGgCaAZoHoaUUpSMB2RhdGFzZXSUjAhmb3JleC12MJSMCGV4cF9uYW1llIwgcGxhbnMvZGVmYXVsdHMvZnJlcTFfSDE1X2JlYW0xMjiUjAhuX2V4cGFuZJRLAowGcHJlZml4lIwPcGxhbnMvZGVmYXVsdHMvlIwFa19vYnOUSwGMF21heF9jb250ZXh0X3RyYW5zaXRpb25zlEsFjBFnZW5lcmF0ZV9leHBfbmFtZZRoAmgGaCqGlFKUjAZkZXZpY2WUjARjdWRhlIwMZ3B0X2xvYWRwYXRolIwJZ3B0L2F6dXJllIwKZ2V0X2NvbW1pdJRoAmgGaDGGlFKUjAtyZWFkX2NvbmZpZ5RoAmgGaDSGlFKUjAVrX2FjdJROjAlncHRfZXBvY2iUjAZsYXRlc3SUjAZjb25maWeUjA5jb25maWcub2ZmbGluZZSMB2xvZ2Jhc2WUjAVsb2dzL5SMBW1rZGlylGgCaAZoPoaUUpSMCHNhdmVwYXRolIwwbG9ncy9mb3JleC12MC9wbGFucy9kZWZhdWx0cy9mcmVxMV9IMTVfYmVhbTEyOC8wlHViaA+GlFKULg=="
+++        "_value": "gASVAgMAAAAAAACMCGJ1aWx0aW5zlIwHZ2V0YXR0cpSTlIwIX19tYWluX1+UjAZQYXJzZXKUk5QpgZR9lCiMDnByZWZpeF9jb250ZXh0lIiMBWtfb2JzlEsBjAlncHRfZXBvY2iUjAZsYXRlc3SUjAVrX2FjdJROjAdsb2diYXNllIwFbG9ncy+UjAh2aXNfZnJlcZRLMowXbWF4X2NvbnRleHRfdHJhbnNpdGlvbnOUSwWMBmNvbW1pdJSMLTE2ZjIxMmYwMTA1OWVkNjhlZTMzNzMxOGVjZmM0YTU3ZDMxYmRjYTQgbWFpbpSMCmJlYW1fd2lkdGiUS4CMEWdlbmVyYXRlX2V4cF9uYW1llGgCaAZoFIaUUpSMDGdwdF9sb2FkcGF0aJSMCWdwdC9henVyZZSMCnBlcmNlbnRpbGWUjARtZWFulIwIcmVuZGVyZXKUjAhSZW5kZXJlcpSMB3ZlcmJvc2WUiIwIZXhwX25hbWWUjCBwbGFucy9kZWZhdWx0cy9mcmVxMV9IMTVfYmVhbTEyOJSMBnByZWZpeJSMD3BsYW5zL2RlZmF1bHRzL5SMCHNhdmVwYXRolIwwbG9ncy9mb3JleC12MC9wbGFucy9kZWZhdWx0cy9mcmVxMV9IMTVfYmVhbTEyOC8wlIwIc2V0X3NlZWSUaAJoBmgkhpRSlIwJc2F2ZV9kaWZmlGgCaAZoJ4aUUpSMBmNvbmZpZ5SMDmNvbmZpZy5vZmZsaW5llIwJcGxhbl9mcmVxlEsBjAZzdWZmaXiUjAEwlIwFbWtkaXKUaAJoBmgvhpRSlIwKYWRkX2V4dHJhc5RoAmgGaDKGlFKUjApnZXRfY29tbWl0lGgCaAZoNYaUUpSMB2NkZl9vYnOUTowHY2RmX2FjdJRHP+MzMzMzMzOMB2hvcml6b26USw+MBmRldmljZZSMBGN1ZGGUjAhuX2V4cGFuZJRLAowLcmVhZF9jb25maWeUaAJoBmg+hpRSlIwHZGF0YXNldJSMCGZvcmV4LXYwlHViaCSGlFKULg=="
++     },
++     "suffix": "0",
++     "verbose": true,
+\ No newline at end of file
+diff --git a/logs/stocks-v0_r/gpt/azure/args.json b/logs/stocks-v0_r/gpt/azure/args.json
+deleted file mode 100644
+index 59fc81f..0000000
+--- a/logs/stocks-v0_r/gpt/azure/args.json
++++ /dev/null
+@@ -1,65 +0,0 @@
+-{
+-    "N": 20,
+-    "action_weight": 5,
+-    "add_extras": {
+-        "_type": "python_object (type = method)",
+-        "_value": "gASVHgMAAAAAAACMCGJ1aWx0aW5zlIwHZ2V0YXR0cpSTlIwIX19tYWluX1+UjAZQYXJzZXKUk5QpgZR9lCiMBHNlZWSUSyqMDHZhbHVlX3dlaWdodJRLAYwKZ2V0X2NvbW1pdJRoAmgGaAqGlFKUjBN0ZXJtaW5hdGlvbl9wZW5hbHR5lEqc////jAZjb25maWeUjA5jb25maWcub2ZmbGluZZSMCGxyX2RlY2F5lIiMCmF0dG5fcGRyb3CURz+5mZmZmZmajAFOlEsUjAdkYXRhc2V0lIwLc3RvY2tzLXYwX3KUjBFnZW5lcmF0ZV9leHBfbmFtZZRoAmgGaBWGlFKUjAZuX2VtYmSUSyCMBW1rZGlylGgCaAZoGYaUUpSMDXJld2FyZF93ZWlnaHSUSwGMC3JlYWRfY29uZmlnlGgCaAZoHYaUUpSMCHNldF9zZWVklGgCaAZoIIaUUpSMCmVtYmRfcGRyb3CURz+5mZmZmZmajAZkZXZpY2WUjARjdWRhlIwNYWN0aW9uX3dlaWdodJRLBYwLZGlzY3JldGl6ZXKUjBNRdWFudGlsZURpc2NyZXRpemVylIwJc2F2ZV9kaWZmlGgCaAZoKYaUUpSMBmNvbW1pdJSMLTAwODdiMGYyNWYxNzUxNjA1YTg3NWVhNjczZWIwMzA0NzAzYjQ3ZmUgbWFpbpSMBHN0ZXCUSwGMDWxlYXJuaW5nX3JhdGWURz9DqSowVTJhjBpzdWJzYW1wbGVkX3NlcXVlbmNlX2xlbmd0aJRLCowHbl9sYXllcpRLBIwIc2F2ZXBhdGiUjBpsb2dzL3N0b2Nrcy12MF9yL2dwdC9henVyZZSMDG5fZXBvY2hzX3JlZpRLMowIZGlzY291bnSURz/vrhR64UeujApiYXRjaF9zaXpllEtAjAhleHBfbmFtZZSMCWdwdC9henVyZZSMB25fc2F2ZXOUSwOMCmFkZF9leHRyYXOUaAJoBmg6hpRSlIwHbG9nYmFzZZSMBWxvZ3MvlIwLcmVzaWRfcGRyb3CURz+5mZmZmZmajAZuX2hlYWSUSwR1Ymg6hpRSlC4="
+-    },
+-    "attn_pdrop": 0.1,
+-    "batch_size": 64,
+-    "commit": "0087b0f25f1751605a875ea673eb0304703b47fe main",
+-    "config": "config.offline",
+-    "dataset": "stocks-v0_r",
+-    "device": "cuda",
+-    "discount": 0.99,
+-    "discretizer": "QuantileDiscretizer",
+-    "embd_pdrop": 0.1,
+-    "exp_name": "gpt/azure",
+-    "generate_exp_name": {
+-        "_type": "python_object (type = method)",
+-        "_value": "gASVHgMAAAAAAACMCGJ1aWx0aW5zlIwHZ2V0YXR0cpSTlIwIX19tYWluX1+UjAZQYXJzZXKUk5QpgZR9lCiMBHNlZWSUSyqMDHZhbHVlX3dlaWdodJRLAYwKZ2V0X2NvbW1pdJRoAmgGaAqGlFKUjBN0ZXJtaW5hdGlvbl9wZW5hbHR5lEqc////jAZjb25maWeUjA5jb25maWcub2ZmbGluZZSMCGxyX2RlY2F5lIiMCmF0dG5fcGRyb3CURz+5mZmZmZmajAFOlEsUjAdkYXRhc2V0lIwLc3RvY2tzLXYwX3KUjBFnZW5lcmF0ZV9leHBfbmFtZZRoAmgGaBWGlFKUjAZuX2VtYmSUSyCMBW1rZGlylGgCaAZoGYaUUpSMDXJld2FyZF93ZWlnaHSUSwGMC3JlYWRfY29uZmlnlGgCaAZoHYaUUpSMCHNldF9zZWVklGgCaAZoIIaUUpSMCmVtYmRfcGRyb3CURz+5mZmZmZmajAZkZXZpY2WUjARjdWRhlIwNYWN0aW9uX3dlaWdodJRLBYwLZGlzY3JldGl6ZXKUjBNRdWFudGlsZURpc2NyZXRpemVylIwJc2F2ZV9kaWZmlGgCaAZoKYaUUpSMBmNvbW1pdJSMLTAwODdiMGYyNWYxNzUxNjA1YTg3NWVhNjczZWIwMzA0NzAzYjQ3ZmUgbWFpbpSMBHN0ZXCUSwGMDWxlYXJuaW5nX3JhdGWURz9DqSowVTJhjBpzdWJzYW1wbGVkX3NlcXVlbmNlX2xlbmd0aJRLCowHbl9sYXllcpRLBIwIc2F2ZXBhdGiUjBpsb2dzL3N0b2Nrcy12MF9yL2dwdC9henVyZZSMDG5fZXBvY2hzX3JlZpRLMowIZGlzY291bnSURz/vrhR64UeujApiYXRjaF9zaXpllEtAjAhleHBfbmFtZZSMCWdwdC9henVyZZSMB25fc2F2ZXOUSwOMCmFkZF9leHRyYXOUaAJoBmg6hpRSlIwHbG9nYmFzZZSMBWxvZ3MvlIwLcmVzaWRfcGRyb3CURz+5mZmZmZmajAZuX2hlYWSUSwR1YmgVhpRSlC4="
+-    },
+-    "get_commit": {
+-        "_type": "python_object (type = method)",
+-        "_value": "gASVHgMAAAAAAACMCGJ1aWx0aW5zlIwHZ2V0YXR0cpSTlIwIX19tYWluX1+UjAZQYXJzZXKUk5QpgZR9lCiMBHNlZWSUSyqMDHZhbHVlX3dlaWdodJRLAYwKZ2V0X2NvbW1pdJRoAmgGaAqGlFKUjBN0ZXJtaW5hdGlvbl9wZW5hbHR5lEqc////jAZjb25maWeUjA5jb25maWcub2ZmbGluZZSMCGxyX2RlY2F5lIiMCmF0dG5fcGRyb3CURz+5mZmZmZmajAFOlEsUjAdkYXRhc2V0lIwLc3RvY2tzLXYwX3KUjBFnZW5lcmF0ZV9leHBfbmFtZZRoAmgGaBWGlFKUjAZuX2VtYmSUSyCMBW1rZGlylGgCaAZoGYaUUpSMDXJld2FyZF93ZWlnaHSUSwGMC3JlYWRfY29uZmlnlGgCaAZoHYaUUpSMCHNldF9zZWVklGgCaAZoIIaUUpSMCmVtYmRfcGRyb3CURz+5mZmZmZmajAZkZXZpY2WUjARjdWRhlIwNYWN0aW9uX3dlaWdodJRLBYwLZGlzY3JldGl6ZXKUjBNRdWFudGlsZURpc2NyZXRpemVylIwJc2F2ZV9kaWZmlGgCaAZoKYaUUpSMBmNvbW1pdJSMLTAwODdiMGYyNWYxNzUxNjA1YTg3NWVhNjczZWIwMzA0NzAzYjQ3ZmUgbWFpbpSMBHN0ZXCUSwGMDWxlYXJuaW5nX3JhdGWURz9DqSowVTJhjBpzdWJzYW1wbGVkX3NlcXVlbmNlX2xlbmd0aJRLCowHbl9sYXllcpRLBIwIc2F2ZXBhdGiUjBpsb2dzL3N0b2Nrcy12MF9yL2dwdC9henVyZZSMDG5fZXBvY2hzX3JlZpRLMowIZGlzY291bnSURz/vrhR64UeujApiYXRjaF9zaXpllEtAjAhleHBfbmFtZZSMCWdwdC9henVyZZSMB25fc2F2ZXOUSwOMCmFkZF9leHRyYXOUaAJoBmg6hpRSlIwHbG9nYmFzZZSMBWxvZ3MvlIwLcmVzaWRfcGRyb3CURz+5mZmZmZmajAZuX2hlYWSUSwR1YmgKhpRSlC4="
+-    },
+-    "learning_rate": 0.0006,
+-    "logbase": "logs/",
+-    "lr_decay": true,
+-    "mkdir": {
+-        "_type": "python_object (type = method)",
+-        "_value": "gASVHgMAAAAAAACMCGJ1aWx0aW5zlIwHZ2V0YXR0cpSTlIwIX19tYWluX1+UjAZQYXJzZXKUk5QpgZR9lCiMBHNlZWSUSyqMDHZhbHVlX3dlaWdodJRLAYwKZ2V0X2NvbW1pdJRoAmgGaAqGlFKUjBN0ZXJtaW5hdGlvbl9wZW5hbHR5lEqc////jAZjb25maWeUjA5jb25maWcub2ZmbGluZZSMCGxyX2RlY2F5lIiMCmF0dG5fcGRyb3CURz+5mZmZmZmajAFOlEsUjAdkYXRhc2V0lIwLc3RvY2tzLXYwX3KUjBFnZW5lcmF0ZV9leHBfbmFtZZRoAmgGaBWGlFKUjAZuX2VtYmSUSyCMBW1rZGlylGgCaAZoGYaUUpSMDXJld2FyZF93ZWlnaHSUSwGMC3JlYWRfY29uZmlnlGgCaAZoHYaUUpSMCHNldF9zZWVklGgCaAZoIIaUUpSMCmVtYmRfcGRyb3CURz+5mZmZmZmajAZkZXZpY2WUjARjdWRhlIwNYWN0aW9uX3dlaWdodJRLBYwLZGlzY3JldGl6ZXKUjBNRdWFudGlsZURpc2NyZXRpemVylIwJc2F2ZV9kaWZmlGgCaAZoKYaUUpSMBmNvbW1pdJSMLTAwODdiMGYyNWYxNzUxNjA1YTg3NWVhNjczZWIwMzA0NzAzYjQ3ZmUgbWFpbpSMBHN0ZXCUSwGMDWxlYXJuaW5nX3JhdGWURz9DqSowVTJhjBpzdWJzYW1wbGVkX3NlcXVlbmNlX2xlbmd0aJRLCowHbl9sYXllcpRLBIwIc2F2ZXBhdGiUjBpsb2dzL3N0b2Nrcy12MF9yL2dwdC9henVyZZSMDG5fZXBvY2hzX3JlZpRLMowIZGlzY291bnSURz/vrhR64UeujApiYXRjaF9zaXpllEtAjAhleHBfbmFtZZSMCWdwdC9henVyZZSMB25fc2F2ZXOUSwOMCmFkZF9leHRyYXOUaAJoBmg6hpRSlIwHbG9nYmFzZZSMBWxvZ3MvlIwLcmVzaWRfcGRyb3CURz+5mZmZmZmajAZuX2hlYWSUSwR1YmgZhpRSlC4="
+-    },
+-    "n_embd": 32,
+-    "n_epochs_ref": 50,
+-    "n_head": 4,
+-    "n_layer": 4,
+-    "n_saves": 3,
+-    "read_config": {
+-        "_type": "python_object (type = method)",
+-        "_value": "gASVHgMAAAAAAACMCGJ1aWx0aW5zlIwHZ2V0YXR0cpSTlIwIX19tYWluX1+UjAZQYXJzZXKUk5QpgZR9lCiMBHNlZWSUSyqMDHZhbHVlX3dlaWdodJRLAYwKZ2V0X2NvbW1pdJRoAmgGaAqGlFKUjBN0ZXJtaW5hdGlvbl9wZW5hbHR5lEqc////jAZjb25maWeUjA5jb25maWcub2ZmbGluZZSMCGxyX2RlY2F5lIiMCmF0dG5fcGRyb3CURz+5mZmZmZmajAFOlEsUjAdkYXRhc2V0lIwLc3RvY2tzLXYwX3KUjBFnZW5lcmF0ZV9leHBfbmFtZZRoAmgGaBWGlFKUjAZuX2VtYmSUSyCMBW1rZGlylGgCaAZoGYaUUpSMDXJld2FyZF93ZWlnaHSUSwGMC3JlYWRfY29uZmlnlGgCaAZoHYaUUpSMCHNldF9zZWVklGgCaAZoIIaUUpSMCmVtYmRfcGRyb3CURz+5mZmZmZmajAZkZXZpY2WUjARjdWRhlIwNYWN0aW9uX3dlaWdodJRLBYwLZGlzY3JldGl6ZXKUjBNRdWFudGlsZURpc2NyZXRpemVylIwJc2F2ZV9kaWZmlGgCaAZoKYaUUpSMBmNvbW1pdJSMLTAwODdiMGYyNWYxNzUxNjA1YTg3NWVhNjczZWIwMzA0NzAzYjQ3ZmUgbWFpbpSMBHN0ZXCUSwGMDWxlYXJuaW5nX3JhdGWURz9DqSowVTJhjBpzdWJzYW1wbGVkX3NlcXVlbmNlX2xlbmd0aJRLCowHbl9sYXllcpRLBIwIc2F2ZXBhdGiUjBpsb2dzL3N0b2Nrcy12MF9yL2dwdC9henVyZZSMDG5fZXBvY2hzX3JlZpRLMowIZGlzY291bnSURz/vrhR64UeujApiYXRjaF9zaXpllEtAjAhleHBfbmFtZZSMCWdwdC9henVyZZSMB25fc2F2ZXOUSwOMCmFkZF9leHRyYXOUaAJoBmg6hpRSlIwHbG9nYmFzZZSMBWxvZ3MvlIwLcmVzaWRfcGRyb3CURz+5mZmZmZmajAZuX2hlYWSUSwR1YmgdhpRSlC4="
+-    },
+-    "reproducibility": {
+-        "command_line": "python /home/kjlin0508/Course_work/AI_Intro/RL_for_Quatitatitive_Trading/Trajectory_Transformer/scripts/train.py",
+-        "git_has_uncommitted_changes": true,
+-        "git_root": "/home/kjlin0508/Course_work/AI_Intro/RL_for_Quatitatitive_Trading",
+-        "git_url": "https://github.com/KJLdefeated/RL_for_Quatitatitive_Trading/tree/0087b0f25f1751605a875ea673eb0304703b47fe",
+-        "time": "Mon May 15 17:39:32 2023"
+-    },
+-    "resid_pdrop": 0.1,
+-    "reward_weight": 1,
+-    "save_diff": {
+-        "_type": "python_object (type = method)",
+-        "_value": "gASVHgMAAAAAAACMCGJ1aWx0aW5zlIwHZ2V0YXR0cpSTlIwIX19tYWluX1+UjAZQYXJzZXKUk5QpgZR9lCiMBHNlZWSUSyqMDHZhbHVlX3dlaWdodJRLAYwKZ2V0X2NvbW1pdJRoAmgGaAqGlFKUjBN0ZXJtaW5hdGlvbl9wZW5hbHR5lEqc////jAZjb25maWeUjA5jb25maWcub2ZmbGluZZSMCGxyX2RlY2F5lIiMCmF0dG5fcGRyb3CURz+5mZmZmZmajAFOlEsUjAdkYXRhc2V0lIwLc3RvY2tzLXYwX3KUjBFnZW5lcmF0ZV9leHBfbmFtZZRoAmgGaBWGlFKUjAZuX2VtYmSUSyCMBW1rZGlylGgCaAZoGYaUUpSMDXJld2FyZF93ZWlnaHSUSwGMC3JlYWRfY29uZmlnlGgCaAZoHYaUUpSMCHNldF9zZWVklGgCaAZoIIaUUpSMCmVtYmRfcGRyb3CURz+5mZmZmZmajAZkZXZpY2WUjARjdWRhlIwNYWN0aW9uX3dlaWdodJRLBYwLZGlzY3JldGl6ZXKUjBNRdWFudGlsZURpc2NyZXRpemVylIwJc2F2ZV9kaWZmlGgCaAZoKYaUUpSMBmNvbW1pdJSMLTAwODdiMGYyNWYxNzUxNjA1YTg3NWVhNjczZWIwMzA0NzAzYjQ3ZmUgbWFpbpSMBHN0ZXCUSwGMDWxlYXJuaW5nX3JhdGWURz9DqSowVTJhjBpzdWJzYW1wbGVkX3NlcXVlbmNlX2xlbmd0aJRLCowHbl9sYXllcpRLBIwIc2F2ZXBhdGiUjBpsb2dzL3N0b2Nrcy12MF9yL2dwdC9henVyZZSMDG5fZXBvY2hzX3JlZpRLMowIZGlzY291bnSURz/vrhR64UeujApiYXRjaF9zaXpllEtAjAhleHBfbmFtZZSMCWdwdC9henVyZZSMB25fc2F2ZXOUSwOMCmFkZF9leHRyYXOUaAJoBmg6hpRSlIwHbG9nYmFzZZSMBWxvZ3MvlIwLcmVzaWRfcGRyb3CURz+5mZmZmZmajAZuX2hlYWSUSwR1YmgphpRSlC4="
+-    },
+-    "savepath": "logs/stocks-v0_r/gpt/azure",
+-    "seed": 42,
+-    "set_seed": {
+-        "_type": "python_object (type = method)",
+-        "_value": "gASVHgMAAAAAAACMCGJ1aWx0aW5zlIwHZ2V0YXR0cpSTlIwIX19tYWluX1+UjAZQYXJzZXKUk5QpgZR9lCiMBHNlZWSUSyqMDHZhbHVlX3dlaWdodJRLAYwKZ2V0X2NvbW1pdJRoAmgGaAqGlFKUjBN0ZXJtaW5hdGlvbl9wZW5hbHR5lEqc////jAZjb25maWeUjA5jb25maWcub2ZmbGluZZSMCGxyX2RlY2F5lIiMCmF0dG5fcGRyb3CURz+5mZmZmZmajAFOlEsUjAdkYXRhc2V0lIwLc3RvY2tzLXYwX3KUjBFnZW5lcmF0ZV9leHBfbmFtZZRoAmgGaBWGlFKUjAZuX2VtYmSUSyCMBW1rZGlylGgCaAZoGYaUUpSMDXJld2FyZF93ZWlnaHSUSwGMC3JlYWRfY29uZmlnlGgCaAZoHYaUUpSMCHNldF9zZWVklGgCaAZoIIaUUpSMCmVtYmRfcGRyb3CURz+5mZmZmZmajAZkZXZpY2WUjARjdWRhlIwNYWN0aW9uX3dlaWdodJRLBYwLZGlzY3JldGl6ZXKUjBNRdWFudGlsZURpc2NyZXRpemVylIwJc2F2ZV9kaWZmlGgCaAZoKYaUUpSMBmNvbW1pdJSMLTAwODdiMGYyNWYxNzUxNjA1YTg3NWVhNjczZWIwMzA0NzAzYjQ3ZmUgbWFpbpSMBHN0ZXCUSwGMDWxlYXJuaW5nX3JhdGWURz9DqSowVTJhjBpzdWJzYW1wbGVkX3NlcXVlbmNlX2xlbmd0aJRLCowHbl9sYXllcpRLBIwIc2F2ZXBhdGiUjBpsb2dzL3N0b2Nrcy12MF9yL2dwdC9henVyZZSMDG5fZXBvY2hzX3JlZpRLMowIZGlzY291bnSURz/vrhR64UeujApiYXRjaF9zaXpllEtAjAhleHBfbmFtZZSMCWdwdC9henVyZZSMB25fc2F2ZXOUSwOMCmFkZF9leHRyYXOUaAJoBmg6hpRSlIwHbG9nYmFzZZSMBWxvZ3MvlIwLcmVzaWRfcGRyb3CURz+5mZmZmZmajAZuX2hlYWSUSwR1YmgghpRSlC4="
+-    },
+-    "step": 1,
+-    "subsampled_sequence_length": 10,
+-    "termination_penalty": -100,
+-    "value_weight": 1
+-}
+\ No newline at end of file
+diff --git a/logs/stocks-v0_r/gpt/azure/data_config.pkl b/logs/stocks-v0_r/gpt/azure/data_config.pkl
+deleted file mode 100644
+index f2b7eea..0000000
+Binary files a/logs/stocks-v0_r/gpt/azure/data_config.pkl and /dev/null differ
+diff --git a/logs/stocks-v0_r/gpt/azure/diff.txt b/logs/stocks-v0_r/gpt/azure/diff.txt
+deleted file mode 100644
+index 7d861b1..0000000
+--- a/logs/stocks-v0_r/gpt/azure/diff.txt
++++ /dev/null
+@@ -1,59 +0,0 @@
+-diff --git a/Trajectory_Transformer/config/offline.py b/Trajectory_Transformer/config/offline.py
+-index 98c4875..9a7a974 100644
+---- a/Trajectory_Transformer/config/offline.py
+-+++ b/Trajectory_Transformer/config/offline.py
+-@@ -29,7 +29,7 @@ base = {
+-         'device': 'cuda',
+- 
+-         'n_embd': 32,
+--        'batch_size': 256,
+-+        'batch_size': 64,
+-         'learning_rate': 6e-4,
+-         'lr_decay': True,
+-         'seed': 42,
+-diff --git a/Trajectory_Transformer/scripts/train.py b/Trajectory_Transformer/scripts/train.py
+-index 9a2273b..6ef5569 100644
+---- a/Trajectory_Transformer/scripts/train.py
+-+++ b/Trajectory_Transformer/scripts/train.py
+-@@ -15,7 +15,7 @@ os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+- os.environ["CUDA_VISIBLE_DEVICES"] = '2'
+- 
+- class Parser(utils.Parser):
+--    dataset: str = 'forex-v0'
+-+    dataset: str = 'stocks-v0_r'
+-     config: str = 'config.offline'
+- 
+- #######################
+-@@ -111,7 +111,7 @@ trainer = trainer_config()
+- 
+- ## scale number of epochs to keep number of updates constant
+- #n_epochs = int(1e6 / len(dataset) * args.n_epochs_ref)
+--n_epochs = 3000
+-+n_epochs = 5000
+- save_freq = int(n_epochs // args.n_saves)
+- 
+- for epoch in range(n_epochs):
+-diff --git a/Trajectory_Transformer/trajectory/datasets/Random/forex-v0_r.pkl b/Trajectory_Transformer/trajectory/datasets/Random/forex-v0_r.pkl
+-index 506330f..e08063c 100644
+-Binary files a/Trajectory_Transformer/trajectory/datasets/Random/forex-v0_r.pkl and b/Trajectory_Transformer/trajectory/datasets/Random/forex-v0_r.pkl differ
+-diff --git a/Trajectory_Transformer/trajectory/datasets/Random/gen_data.py b/Trajectory_Transformer/trajectory/datasets/Random/gen_data.py
+-index bbd08e4..659bd84 100644
+---- a/Trajectory_Transformer/trajectory/datasets/Random/gen_data.py
+-+++ b/Trajectory_Transformer/trajectory/datasets/Random/gen_data.py
+-@@ -6,13 +6,13 @@ import matplotlib.pyplot as plt
+- import numpy as np
+- import pickle
+- 
+--quat_type = "forex-v0"
+--env = gym.make('forex-v0', frame_bound=(50, 100), window_size=10)
+-+quat_type = "stocks-v0"
+-+env = gym.make('stocks-v0', frame_bound=(50, 100), window_size=10)
+- # env = gym.make('stocks-v0', frame_bound=(50, 100), window_size=10)
+- 
+- action_dim = env.action_space.n
+- 
+--episode = 10
+-+episode = 100
+- T = 0
+- episode_data = {}
+- for k in ['observations', 'next_observations', 'actions', 'rewards', 'terminals']:
+\ No newline at end of file
+diff --git a/logs/stocks-v0_r/gpt/azure/model_config.pkl b/logs/stocks-v0_r/gpt/azure/model_config.pkl
+deleted file mode 100644
+index db868c9..0000000
+Binary files a/logs/stocks-v0_r/gpt/azure/model_config.pkl and /dev/null differ
+diff --git a/logs/stocks-v0_r/gpt/azure/state_0.pt b/logs/stocks-v0_r/gpt/azure/state_0.pt
+deleted file mode 100644
+index aaacded..0000000
+Binary files a/logs/stocks-v0_r/gpt/azure/state_0.pt and /dev/null differ
+diff --git a/logs/stocks-v0_r/gpt/azure/state_1666.pt b/logs/stocks-v0_r/gpt/azure/state_1666.pt
+deleted file mode 100644
+index c3fe2b4..0000000
+Binary files a/logs/stocks-v0_r/gpt/azure/state_1666.pt and /dev/null differ
+diff --git a/logs/stocks-v0_r/gpt/azure/state_3332.pt b/logs/stocks-v0_r/gpt/azure/state_3332.pt
+deleted file mode 100644
+index f13edba..0000000
+Binary files a/logs/stocks-v0_r/gpt/azure/state_3332.pt and /dev/null differ
+diff --git a/logs/stocks-v0_r/gpt/azure/state_4998.pt b/logs/stocks-v0_r/gpt/azure/state_4998.pt
+deleted file mode 100644
+index 5531c7d..0000000
+Binary files a/logs/stocks-v0_r/gpt/azure/state_4998.pt and /dev/null differ
+diff --git a/logs/stocks-v0_r/gpt/azure/trainer_config.pkl b/logs/stocks-v0_r/gpt/azure/trainer_config.pkl
+deleted file mode 100644
+index 090ede9..0000000
+Binary files a/logs/stocks-v0_r/gpt/azure/trainer_config.pkl and /dev/null differ
+diff --git a/old_env/trader.py b/old_env/trader.py
+index 7937f12..6b2f29c 100644
+--- a/old_env/trader.py
++++ b/old_env/trader.py
+@@ -4,7 +4,7 @@ import math
+ 
+ from time import time
+ from enum import Enum
+-from env.position import Position
++from position import Position
+ 
+ 
+ class ActionCode(Enum):

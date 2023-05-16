@@ -1,6 +1,3 @@
-from env.market import Market
-from helper.args_parser import model_launcher_parser
-from helper.data_logger import generate_algorithm_logger, generate_market_logger
 import sys
 import gym
 import numpy as np
@@ -15,12 +12,15 @@ from torch.autograd import Variable
 import torch.optim.lr_scheduler as Scheduler
 import torch.nn.functional as F
 from torch.utils.tensorboard import SummaryWriter
+from buildEnv import createEnv, MyStocksEnv
+from torch.distributions import Categorical
 import logging
 #from skopt.space import Real, Integer
 #from skopt import gp_minimize
 logging.basicConfig(filename='train.log', level=logging.DEBUG)
 
-
+os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+os.environ["CUDA_VISIBLE_DEVICES"] = '2'
 def soft_update(target, source, tau):
     for target_param, param in zip(target.parameters(), source.parameters()):
         target_param.data.copy_(target_param.data * (1.0 - tau) + param.data * tau)
@@ -153,46 +153,16 @@ class DDPG(object):
         hard_update(self.actor_target, self.actor) 
         hard_update(self.critic_target, self.critic)
 
-    def get_stock_code_and_action(self, a, use_greedy=False, use_prob=False):
-        # Reshape a.
-        if not use_greedy:
-            a = a.reshape((-1,))
-            # Calculate action index depends on prob.
-            if use_prob:
-                # Generate indices.
-                a_indices = np.arange(a.shape[0])
-                # Get action index.
-                action_index = np.random.choice(a_indices, p=a)
-            else:
-                # Get action index.
-                action_index = np.argmax(a)
-        else:
-            if use_prob:
-                # Calculate action index
-                if np.random.uniform() < self.epsilon:
-                    action_index = np.floor(a).astype(int)
-                else:
-                    action_index = np.random.randint(0, self.action_space)
-            else:
-                # Calculate action index
-                action_index = np.floor(a).astype(int)
 
-        # Get action
-        action = action_index % 3
-        # Get stock index
-        stock_index = np.floor(action_index / 3).astype(np.int)
-        # Get stock code.
-        stock_code = self.env.codes[stock_index]
-
-        return stock_code, action, action_index
-
-    def select_action(self, state, action_noise=None):
+    def select_action(self, state, epsilon=0.0):
         self.actor.eval()
-        mu = self.actor((Variable(state)))
-        mu = mu.data
-        noise = [0.0] if action_noise is None else action_noise.noise()
-        noise = torch.FloatTensor(noise)
-        return torch.clamp(mu + noise, min=0, max=1.0)
+        probs = self.actor((Variable(state)))
+        probs = probs.detach()
+        m = Categorical(logits= probs)
+        action = m.sample().item()
+        if random.random() > epsilon:
+            return self.env.action_space.sample()
+        return action
 
     def update_parameters(self, batch):
         state_batch = Variable(torch.cat([b.state for b in batch]))
@@ -201,7 +171,6 @@ class DDPG(object):
         mask_batch = Variable(torch.cat([b.mask for b in batch]))
         next_state_batch = Variable(torch.cat([b.next_state for b in batch]))
         
-        ########## YOUR CODE HERE (10~20 lines) ##########
         # Calculate policy loss and value loss
         # Update the actor and the critic
         q_v = self.critic(state_batch, action_batch)
@@ -219,7 +188,6 @@ class DDPG(object):
         self.actor_optim.zero_grad()
         policy_loss.backward()
         self.actor_optim.step()
-        ########## END OF YOUR CODE ########## 
 
         soft_update(self.actor_target, self.actor, self.tau)
         soft_update(self.critic_target, self.critic, self.tau)
@@ -248,9 +216,9 @@ class DDPG(object):
         if critic_path is not None: 
             self.critic.load_state_dict(torch.load(critic_path))
 
-def train(env: Market, lr_a_, lr_c_, lr_a_decay_, lr_c_decay_, noise_scale_, batch_size_ , env_name = 'Stock_Market'):   
+def train(env:MyStocksEnv, lr_a_, lr_c_, lr_a_decay_, lr_c_decay_, noise_scale_, batch_size_ , env_name = 'Stock_Market'):   
     # Define a tensorboard writer
-    writer = SummaryWriter("./tb_record_3/DDPG/train-{}-{}".format(lr_a_, lr_c_))
+    #writer = SummaryWriter("./tb_record_3/DDPG/train-{}-{}".format(lr_a_, lr_c_))
 
     logging.info('lr_a = {}, lr_c = {} , lr_a_decay={} , lr_c_decay={}, noise_scale = {} , batch_size = {}'.format(
         lr_a_, lr_c_, lr_a_decay_, lr_c_decay_, noise_scale_, batch_size_))
@@ -276,9 +244,8 @@ def train(env: Market, lr_a_, lr_c_, lr_a_decay_, lr_c_decay_, noise_scale_, bat
     total_numsteps = 0
     updates = 0
 
-    
-    agent = DDPG(num_inputs = env.data_dim,
-                 action_space = env.trader.action_space, 
+    agent = DDPG(num_inputs = env.reset().reshape(-1).shape[0],
+                 action_space = env.action_space.n, 
                  env = env, 
                  epsilon= epsilon,
                  gamma = gamma, 
@@ -288,15 +255,15 @@ def train(env: Market, lr_a_, lr_c_, lr_a_decay_, lr_c_decay_, noise_scale_, bat
                 lr_c= lr_c, 
                 lr_a_decay= lr_a_decay, 
                 lr_c_decay = lr_c_decay)
-    ounoise = OUNoise(env.trader.action_space)
+    #ounoise = OUNoise(env.action_space)
     memory = ReplayMemory(replay_size)
     
     for i_episode in range(num_episodes):
         
-        ounoise.scale = noise_scale
-        ounoise.reset()
+        #ounoise.scale = noise_scale
+        #ounoise.reset()
         
-        state = torch.Tensor([env.reset()])
+        state = torch.Tensor([env.reset().reshape(-1)])
 
         episode_reward = 0
         val_loss = []
@@ -308,10 +275,9 @@ def train(env: Market, lr_a_, lr_c_, lr_a_decay_, lr_c_decay_, noise_scale_, bat
             # 2. Push the sample to the replay buffer
             # 3. Update the actor and the critic
             total_numsteps+=1
-            action = agent.select_action(state, ounoise)
-            code, action, a_index= agent.get_stock_code_and_action(action, use_greedy=False, use_prob=True)
-            next_state, reward, done, _ = env.forward(code, action)
-            next_state = torch.Tensor([next_state])
+            action = agent.select_action(state, epsilon)
+            next_state, reward, done, info = env.step(action)
+            next_state = torch.Tensor([next_state.reshape(-1)])
             memory.push(state, action, torch.Tensor([done]), next_state, torch.Tensor([reward]))
             if len(memory) >= batch_size and total_numsteps%updates_per_step == 0:
                 batch = memory.sample(batch_size)
@@ -320,7 +286,7 @@ def train(env: Market, lr_a_, lr_c_, lr_a_decay_, lr_c_decay_, noise_scale_, bat
                 act_loss.append(a_loss)
             episode_reward += reward
             state = next_state
-            if done == env.Done:
+            if done:
                 break
             ########## END OF YOUR CODE ########## 
         
@@ -330,23 +296,24 @@ def train(env: Market, lr_a_, lr_c_, lr_a_decay_, lr_c_decay_, noise_scale_, bat
         critic_loss = np.mean(val_loss)
         t = 0
         
-        state = torch.Tensor([env.reset()])
+        state = torch.Tensor([env.reset().reshape(-1)])
         episode_reward = 0
         while True:
             action = agent.select_action(state)
 
-            next_state, reward, done, _ = env.step(action.numpy()[0])
+            next_state, reward, done, info = env.step(action)
             
             #env.render()
             
             episode_reward += reward
 
-            next_state = torch.Tensor([next_state])
+            next_state = torch.Tensor([next_state.reshape(-1)])
 
             state = next_state
             
             t += 1
             if done:
+                print(info)
                 break
 
         rewards.append(episode_reward)
@@ -358,36 +325,22 @@ def train(env: Market, lr_a_, lr_c_, lr_a_decay_, lr_c_decay_, noise_scale_, bat
             logging.info("Episode: {}, length: {}, reward: {:.2f}, ewma reward: {:.2f}, val loss: {:.2f}, act loss: {:.2f}".format(i_episode, t, rewards[-1], ewma_reward, critic_loss, actor_loss))
 
         #Logging
-        writer.add_scalar('Reward', episode_reward, i_episode)
-        writer.add_scalar('EWMA Reward', ewma_reward, i_episode)
-        writer.add_scalar('Critic loss', critic_loss, i_episode)
-        writer.add_scalar('Actor loss', actor_loss, i_episode)
+        #writer.add_scalar('Reward', episode_reward, i_episode)
+        #writer.add_scalar('EWMA Reward', ewma_reward, i_episode)
+        #writer.add_scalar('Critic loss', critic_loss, i_episode)
+        #writer.add_scalar('Actor loss', actor_loss, i_episode)
 
-        if ewma_reward >= 120:
-            agent.save_model(env_name, '.pth')
-            logging.info("Running reward is now {} and the total episode is {}.".format(ewma_reward, i_episode))
-            #break
-            return (ewma_reward+500)/(i_episode+1) #For tuning
+        #if ewma_reward >= 120:
+        #    agent.save_model(env_name, '.pth')
+        #    logging.info("Running reward is now {} and the total episode is {}.".format(ewma_reward, i_episode))
+        #    #break
+        #    return (ewma_reward+500)/(i_episode+1) #For tuning
     
     agent.save_model(env_name, '.pth')  
     logging.info("Running reward is now {} and the total episode is {}.".format(ewma_reward, i_episode))
     return (ewma_reward+500)/(i_episode+1) #For tuning
 
 def main():
-    """
-    Market environment args 
-    """
-    #mode = args.mode
-    mode = 'test'
-    # codes = args.codes
-    codes = ["2303"]
-    # market = args.market
-    market = 'stock'
-    # episode = args.episode
-    episode = 1000
-    training_data_ratio = 0.95
-    # training_data_ratio = args.training_data_ratio
-
     """
     Training args
     """
@@ -398,14 +351,8 @@ def main():
     noise_scale_ = 0.3
     batch_size_ = 64
 
-    model_name = os.path.basename(__file__).split('.')[0]
 
-    env = Market(codes, start_date="2012-01-01", end_date="2018-01-01", **{
-        "market": market,
-        "mix_index_state": False,
-        "logger": generate_market_logger(model_name),
-        "training_data_ratio": training_data_ratio,
-    })
+    env = createEnv(2330)
 
     train(env, lr_a, lr_c, lr_a_decay_, lr_c_decay_, noise_scale_, batch_size_)
 if __name__ == '__main__':
