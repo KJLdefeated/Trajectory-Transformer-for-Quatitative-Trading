@@ -11,6 +11,7 @@ pyprind
 tensorflow
 gin-config
 gym==0.21.0
+scikit-optimize
 tqdm
 blosc
 git+https://github.com/google/dopamine.git

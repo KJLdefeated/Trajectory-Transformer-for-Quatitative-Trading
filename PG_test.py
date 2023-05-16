@@ -1,6 +1,3 @@
-# Spring 2023, 535515 Reinforcement Learning
-# HW1: REINFORCE and baseline
-
 import os
 import gym
 from itertools import count
@@ -20,7 +17,6 @@ from torch.utils.tensorboard import SummaryWriter
 # Define a useful tuple (optional)
 SavedAction = namedtuple('SavedAction', ['log_prob', 'value'])
 
-writer = SummaryWriter("./tb_record_1/Policy_Gradient")
         
 class Policy(nn.Module):
     """
@@ -145,7 +141,9 @@ class Policy(nn.Module):
         del self.saved_actions[:]
 
 
-def train(lr=0.01):
+def train(lr=0.01, lr_decay=0.99):
+    writer = SummaryWriter("./tb_record_1/Policy_Gradient1-{}-{}".format(lr, lr_decay))
+
     """
         Train the model using SGD (via backpropagation)
         TODO (1): In each episode, 
@@ -161,13 +159,13 @@ def train(lr=0.01):
     optimizer = optim.Adam(model.parameters(), lr=lr)
     
     # Learning rate scheduler (optional)
-    scheduler = Scheduler.StepLR(optimizer, step_size=100, gamma=0.9)
+    scheduler = Scheduler.StepLR(optimizer, step_size=100, gamma=lr_decay)
     
     # EWMA reward for tracking the learning progress
     ewma_reward = 0
     
     # run inifinitely many episodes
-    for i_episode in count(1):
+    for i_episode in range(5000):
         # reset environment and episode reward
         state = env.reset()
         ep_reward = 0
@@ -204,16 +202,17 @@ def train(lr=0.01):
 
         writer.add_scalar('EWMA reward', ewma_reward, i_episode)
         writer.add_scalar('Episode rewad', ep_reward, i_episode)
-        """
-        if ewma_reward > env.spec.reward_threshold:
+        
+        if ewma_reward > 300:
             if not os.path.isdir("./Tables"):
                 os.mkdir("./Tables")
             torch.save(model.state_dict(), './Tables/PG_test.pth')
             print("Solved! Running reward is now {} and "
                   "the last episode runs to {} time steps!".format(ewma_reward, t))
             break
-        """
     torch.save(model.state_dict(), './Tables/PG_test.pth')
+    return i_episode/ewma_reward
+   
 
 
 def test(n_episodes=10):
