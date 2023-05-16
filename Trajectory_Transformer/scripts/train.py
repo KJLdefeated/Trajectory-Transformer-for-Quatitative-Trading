@@ -15,7 +15,7 @@ os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
 os.environ["CUDA_VISIBLE_DEVICES"] = '2'
 
 class Parser(utils.Parser):
-    dataset: str = 'stocks-v0_r'
+    dataset: str = 'stock_2330'
     config: str = 'config.offline'
 
 #######################
@@ -111,7 +111,7 @@ trainer = trainer_config()
 
 ## scale number of epochs to keep number of updates constant
 #n_epochs = int(1e6 / len(dataset) * args.n_epochs_ref)
-n_epochs = 5000
+n_epochs = 10000
 save_freq = int(n_epochs // args.n_saves)
 
 for epoch in range(n_epochs):

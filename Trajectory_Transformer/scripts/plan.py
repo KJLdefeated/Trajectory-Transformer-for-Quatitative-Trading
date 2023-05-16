@@ -12,15 +12,19 @@ parent_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, parent_dir)
 import trajectory.utils as utils
 import trajectory.datasets as datasets
+from trajectory.datasets.Random.buildEnv import createEnv
 from trajectory.search import (
     beam_plan,
     make_prefix,
     extract_actions,
     update_context,
 )
+os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+os.environ["CUDA_VISIBLE_DEVICES"] = '3'
 
+code = '2330'
 class Parser(utils.Parser):
-    dataset: str = 'forex-v0'
+    dataset: str = 'stock_'+code
     config: str = 'config.offline'
 
 #######################
@@ -43,7 +47,8 @@ gpt, gpt_epoch = utils.load_model(args.logbase, args.dataset, args.gpt_loadpath,
 ####### dataset #######
 #######################
 
-env = gym.make(args.dataset, frame_bound=(50, 100), window_size=10)
+
+env = createEnv(code)
 #renderer = utils.make_renderer(args)
 timer = utils.timer.Timer()
 
@@ -68,7 +73,7 @@ rollout = [observation.copy()]
 ## previous (tokenized) transitions for conditioning transformer
 context = []
 
-T = 1000000
+T = 1187
 for t in range(T):
 
     #observation = preprocess_fn(observation)
@@ -105,11 +110,11 @@ for t in range(T):
     ## update rollout observations and context transitions
     rollout.append(next_observation.copy())
     context = update_context(context, discretizer, observation, action, reward, args.max_context_transitions)
-
     print(
         f'[ plan ] t: {t} / {T} | r: {reward:.2f} | R: {total_reward:.2f} '
         f'time: {timer():.2f} | {args.dataset} | {args.exp_name} | {args.suffix}\n'
     )
+    print(info, action)
 
     ## visualization
     #if t % args.vis_freq == 0 or terminal or t == T:

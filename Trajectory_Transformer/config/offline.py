@@ -57,7 +57,7 @@ base = {
         'renderer': 'Renderer',
 
         'plan_freq': 1,
-        'horizon': 15,
+        'horizon': 10,
         'beam_width': 128,
         'n_expand': 2,
 
