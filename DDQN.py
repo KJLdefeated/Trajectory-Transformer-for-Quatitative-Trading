@@ -10,6 +10,8 @@ import os
 from tqdm import tqdm
 import buildEnv
 import math
+#import tensorflow as tf
+import math
 total_rewards = []
 
 
@@ -33,7 +35,8 @@ class replay_buffer():
         Return:
             None
         '''
-        self.memory.append([state.reshape(48), action, reward, next_state.reshape(48), done])
+        
+        self.memory.append([state, action, reward, next_state.reshape(48), done])
 
     def sample(self, batch_size):
         '''
@@ -145,6 +148,7 @@ class Agent():
         dones = torch.tensor(np.array(dones), dtype=torch.float)
 
         # Step3: Forward the data to the evaluate net and the target net with a few adjustment of the size
+        
         q_values = torch.gather(self.evaluate_net(states), 1, actions)
         
         next_actions = self.evaluate_net(next_states).argmax(dim=1, keepdim=True)
@@ -206,9 +210,19 @@ def train(env):
         while True:
             agent.count += 1
             #env.render()
-            action = agent.choose_action(state)
+            tempstate1 = state.reshape(48)
+            state = state.reshape(48)
+            for i in range(12):
+                for j in range(4):
+                    tempstate1[i*4+j] = (state[44+j] - state[4*i+j])/state[44+j]
+            action = agent.choose_action(tempstate1)
             next_state, reward, done, _ = env.step(action)
-            agent.buffer.insert(state, int(action), reward, next_state, int(done))
+            tempstate2 = next_state.reshape(48)
+            next_state = next_state.reshape(48)
+            for i in range(12):
+                for j in range(4):
+                    tempstate2[i*4+j] = (next_state[44+j] - next_state[4*i+j])/next_state[44+j]
+            agent.buffer.insert(tempstate1, int(action), reward, tempstate2, int(done))
             if(action==1):
                 count1 += 1
             else:
@@ -238,30 +252,34 @@ def test(env):
     """
     rewards = []
     testing_agent = Agent(env)
-    testing_agent.target_net.load_state_dict(torch.load("./Tables/DDQN2_33.pt"))
+    testing_agent.target_net.load_state_dict(torch.load("./Tables/DDQN.pt"))
     for _ in range(1):
         state = env.reset().reshape(48)
         while True:
+            tempstate = state
+            for i in range(12):
+                for j in range(4):
+                    tempstate[i*4+j] = (state[i*4+j] - state[44+j])/state[44+j]
+            tempstate[44] = tempstate[45] = tempstate[46] = tempstate[47] = 0
             Q = testing_agent.target_net(
-                torch.FloatTensor(state.reshape(48))).squeeze(0).detach()
+                torch.FloatTensor(tempstate.reshape(48))).squeeze(0).detach()
             action = int(torch.argmax(Q).numpy())
             next_state, _, done, _ = env.step(action)
             if done:
                 break
             state = next_state.reshape(48)
-            #env.render()
     print(env._total_profit)
     print(env._total_reward)
 
 
 if __name__ == "__main__":
-    env = buildEnv.createEnv(2330,frame_bounds=(12,1200))        
+    env = buildEnv.createEnv(2330)        
     os.makedirs("./Tables", exist_ok=True)
 
     # training section:
-    for i in range(1):
+    for i in range(5):
         print(f"#{i + 1} training progress")
-        #train(env)
+        train(env)
         
     # testing section:
     test(env)
