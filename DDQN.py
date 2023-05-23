@@ -10,7 +10,6 @@ import os
 from tqdm import tqdm
 import buildEnv
 import math
-#import tensorflow as tf
 import math
 total_rewards = []
 
@@ -87,7 +86,7 @@ class Net(nn.Module):
 
 
 class Agent():
-    def __init__(self, env, epsilon=0, learning_rate=0.0002, GAMMA=0.97, batch_size=32, capacity=10000):
+    def __init__(self, env, epsilon=10, learning_rate=0.0002, GAMMA=0.97, batch_size=32, capacity=10000):
         """
         The agent learning how to control the action of the cart pole.
         Hyperparameters:
@@ -162,15 +161,12 @@ class Agent():
 
         # Step6: Backpropagation.
         loss.backward()
-        
         # Step7: Optimize the loss function.
         self.optimizer.step()
-
+        
+            
         # End your code
-        try:
-            torch.save(self.target_net.state_dict(), "./Tables/DDQN.pt")
-        except RuntimeError:
-            print("!!!")
+        
 
 
     def choose_action(self, state):
@@ -184,7 +180,6 @@ class Agent():
             # forward the state to nn and find the argmax of the actions
             
             action = torch.argmax(self.evaluate_net(Tensor(state).reshape(48))).item()
-            #print(action) 
             # End your code
         return action
 
@@ -198,11 +193,13 @@ def train(env):
         None (Don't need to return anything)
     """
     agent = Agent(env)
-    #agent.target_net.load_state_dict(torch.load("./Tables/DDQN.pt"))
-    #agent.evaluate_net.load_state_dict(torch.load("./Tables/DDQN.pt"))
-    episode = 1000
+    #agent.target_net.load_state_dict(torch.load("/content/drive/My Drive/Colab/RL_for_Quatitatitive_Trading/Tables/DDQN3850.pt"))
+    #agent.evaluate_net.load_state_dict(torch.load("/content/drive/My Drive/Colab/RL_for_Quatitatitive_Trading/Tables/DDQN3850.pt"))
+    episode = 150
     rewards = []
+    cnt = 0
     for _ in tqdm(range(episode)):
+        cnt += 1
         state = env.reset()
         #print(state)
         count0 = 0
@@ -231,16 +228,27 @@ def train(env):
                 agent.learn()
             if done:
                 rewards.append(env._total_reward)
-                print("!")
-                print(count0)
-                print(count1)
-                print(agent.env._total_reward)
-                print(agent.env._total_profit)
+                #print("!")
+                #print(count0)
+                #print(count1)
+                #print(agent.env._total_reward)
+                #print(agent.env._total_profit)
                 break
             state = next_state
         agent.epsilon += 0.1
-    total_rewards.append(rewards)
-
+        
+        if(cnt % 50 ==0):
+            url = "Tables/DDQN"+str(cnt+3850)+".pt"
+            url2 = "Rewards/DDQN_rewards_iter2_new"+str(cnt+3850)+".npy"
+            try:
+                np.save(url2, np.array(rewards))
+                print(".np saved at "+url2)
+            except RuntimeError:
+                print("!!")  
+            try:
+                torch.save(agent.target_net.state_dict(), url)
+            except RuntimeError:
+                print("!!!")
 
 def test(env):
     """
@@ -250,17 +258,15 @@ def test(env):
     Returns:
         None (Don't need to return anything)
     """
-    rewards = []
     testing_agent = Agent(env)
-    testing_agent.target_net.load_state_dict(torch.load("./Tables/DDQN.pt"))
+    testing_agent.target_net.load_state_dict(torch.load("Tables/DDQN2850.pt"))
     for _ in range(1):
         state = env.reset().reshape(48)
         while True:
             tempstate = state
             for i in range(12):
                 for j in range(4):
-                    tempstate[i*4+j] = (state[i*4+j] - state[44+j])/state[44+j]
-            tempstate[44] = tempstate[45] = tempstate[46] = tempstate[47] = 0
+                    tempstate[i*4+j] = (state[44+j] - state[i*4+j])/state[44+j]
             Q = testing_agent.target_net(
                 torch.FloatTensor(tempstate.reshape(48))).squeeze(0).detach()
             action = int(torch.argmax(Q).numpy())
@@ -275,15 +281,14 @@ def test(env):
 if __name__ == "__main__":
     env = buildEnv.createEnv(2330)        
     os.makedirs("./Tables", exist_ok=True)
-
+    os.makedirs("./Rewards", exist_ok=True)
     # training section:
-    for i in range(5):
+    for i in range(1):
         print(f"#{i + 1} training progress")
-        train(env)
+        #with tf.device('/device:GPU:0'):
+        #train(env)
         
     # testing section:
     test(env)
     env.close()
-
-    os.makedirs("./Rewards", exist_ok=True)
-    np.save("./Rewards/DDQN_rewards.npy", np.array(total_rewards))
+    #np.save("./Rewards/DDQN_rewards.npy", np.array(total_rewards))

@@ -3,7 +3,6 @@ import gym
 from itertools import count
 from collections import namedtuple
 import numpy as np
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -12,7 +11,7 @@ from torch.distributions import Categorical
 import torch.optim.lr_scheduler as Scheduler
 import buildEnv
 from torch import Tensor
-from torch.utils.tensorboard import SummaryWriter
+#from torch.utils.tensorboard import SummaryWriter
 
 # Define a useful tuple (optional)
 SavedAction = namedtuple('SavedAction', ['log_prob', 'value'])
@@ -34,7 +33,7 @@ class Policy(nn.Module):
         # Extract the dimensionality of state and action spaces
         self.discrete = isinstance(env.action_space, gym.spaces.Discrete)     
         self.action_dim = env.action_space.n if self.discrete else env.action_space.shape[0]
-        self.hidden_size = 256
+        self.hidden_size = 500
         self.double()
 
         self.observation_dim = 1
@@ -68,7 +67,8 @@ class Policy(nn.Module):
         x = self.shared_layer2(x)
         x = F.relu(x)
         x = self.shared_layer3(x)
-        x = F.relu(x)
+        #x = F.relu(x)
+        x = F.sigmoid(x)
         action_prob = self.action_layer(x)
         state_value = self.value_layer(x)
         ########## END OF YOUR CODE ##########
@@ -86,7 +86,13 @@ class Policy(nn.Module):
         """
         
         ########## YOUR CODE HERE (3~5 lines) ##########
-        state = torch.Tensor(state)
+        state = state.reshape(-1)
+        tempstate = state        
+        for i in range(12):
+            for j in range(4):
+                tempstate[i*4+j] = (state[44+j] - state[i*4+j])/state[44+j]
+        state = torch.Tensor(tempstate)
+        state = state.cuda()
         action, state_value= self.forward(state)
         m = Categorical(logits=action)
         action = m.sample()
@@ -121,7 +127,10 @@ class Policy(nn.Module):
             returns.append(discounted_sum)
         returns.reverse()
         returns = torch.Tensor(returns)
-        returns = (returns - returns.mean()) / (returns.std())
+
+        returns = returns.cuda()
+
+        returns = (returns - returns.mean()) / (returns.std() + 000000.1)
         log_probs = [action.log_prob for action in saved_actions]
         values = [action.value for action  in saved_actions]
         action_log_probs = torch.stack(log_probs, dim=0)
@@ -141,8 +150,15 @@ class Policy(nn.Module):
         del self.saved_actions[:]
 
 
-def train(lr=0.01, lr_decay=0.99):
-    writer = SummaryWriter("./tb_record_1/Policy_Gradient1-{}-{}".format(lr, lr_decay))
+def train(lr=0.001, lr_decay=0.99):
+    random_seed = 10
+    global env 
+    env = buildEnv.createEnv(2330)
+    env.seed(random_seed)  
+    torch.manual_seed(random_seed)  
+
+
+    #writer = SummaryWriter("./tb_record_1/Policy_Gradient1-{}-{}".format(lr, lr_decay))
 
     """
         Train the model using SGD (via backpropagation)
@@ -157,12 +173,18 @@ def train(lr=0.01, lr_decay=0.99):
     # Instantiate the policy model and the optimizer
     model = Policy()
     optimizer = optim.Adam(model.parameters(), lr=lr)
+
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    model.to(device)
     
     # Learning rate scheduler (optional)
     scheduler = Scheduler.StepLR(optimizer, step_size=100, gamma=lr_decay)
     
     # EWMA reward for tracking the learning progress
     ewma_reward = 0
+
+    pre_reward = 0
+    same_count = 0
     
     # run inifinitely many episodes
     for i_episode in range(5000):
@@ -198,11 +220,22 @@ def train(lr=0.01, lr_decay=0.99):
             
         # update EWMA reward and log the results
         ewma_reward = 0.05 * ep_reward + (1 - 0.05) * ewma_reward
-        print('Episode {}\tlength: {}\treward: {}\t ewma reward: {}\t profit: {}'.format(i_episode, t, ep_reward, ewma_reward, env._total_profit))
+        print('Episode {}\tlength: {}\treward: {}\t ewma reward: {}\t profit: {} \t loss: {}'.format(i_episode, t, ep_reward, ewma_reward, env._total_profit, loss))
 
-        writer.add_scalar('EWMA reward', ewma_reward, i_episode)
-        writer.add_scalar('Episode rewad', ep_reward, i_episode)
-        
+        #writer.add_scalar('EWMA reward', ewma_reward, i_episode)
+        #writer.add_scalar('Episode reward', ep_reward, i_episode)
+        #writer.add_scalar('Episode profit', env._total_profit, i_episode)
+
+        if ep_reward == pre_reward:
+            same_count += 1
+        else:
+            same_count = 0
+        pre_reward = ep_reward
+        if same_count >= 100:
+            pre_reward = 0
+            same_count = 0
+            break
+        """
         if ewma_reward > 300:
             if not os.path.isdir("./Tables"):
                 os.mkdir("./Tables")
@@ -210,8 +243,10 @@ def train(lr=0.01, lr_decay=0.99):
             print("Solved! Running reward is now {} and "
                   "the last episode runs to {} time steps!".format(ewma_reward, t))
             break
-    torch.save(model.state_dict(), './Tables/PG_test.pth')
-    return i_episode/ewma_reward
+        """
+    torch.save(model.state_dict(), './Tables/PG-{}-{}.pth'.format(lr, lr_decay))
+    env.close()
+    return -ewma_reward
    
 
 
@@ -220,6 +255,8 @@ def test(n_episodes=10):
         Test the learned model (no change needed)
     """     
     model = Policy()
+    device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    model.to(device)
     
     model.load_state_dict(torch.load('./Tables/PG_test.pth'))
     
@@ -243,12 +280,12 @@ def test(n_episodes=10):
 
 if __name__ == '__main__':
     # For reproducibility, fix the random seed
-    random_seed = 10  
-    lr = 0.01
-    env = buildEnv.createEnv(2330)
+    #random_seed = 10  
+    lr = 0.001
+    #env = buildEnv.createEnv(2330)
     #env = gym.make('stocks-v0', frame_bound=(50, 100), window_size=10)
     
-    env.seed(random_seed)  
-    torch.manual_seed(random_seed)  
+    #env.seed(random_seed)  
+    #torch.manual_seed(random_seed)  
     train(lr)
     test()
