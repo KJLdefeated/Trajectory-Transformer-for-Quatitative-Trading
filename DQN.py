@@ -87,7 +87,7 @@ class Net(nn.Module):
 
 class Agent:
     def __init__(
-        self, env, epsilon=0.05, learning_rate=0.0002, GAMMA=0.99, batch_size=32, capacity=10000
+        self, env, epsilon=0, learning_rate=0.0002, GAMMA=0.97, batch_size=32, capacity=10000
     ):
         """
         The agent learning how to control the action of the cart pole.
@@ -231,7 +231,7 @@ def train(env):
                 rewards.append(count)
                 break
             state = next_state
-        print(num, 'lentgh: {}'.format(count), info)
+        print(num, info)
     total_rewards.append(rewards)
 
 
@@ -268,7 +268,7 @@ if __name__ == "__main__":
     os.makedirs("./Tables", exist_ok=True)
 
     # training section:
-    for i in range(5):
+    for i in range(2):
         print(f"#{i + 1} training progress")
         train(env)
 
