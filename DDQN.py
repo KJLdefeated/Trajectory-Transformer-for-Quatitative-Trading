@@ -259,7 +259,7 @@ def test(env):
         None (Don't need to return anything)
     """
     testing_agent = Agent(env)
-    testing_agent.target_net.load_state_dict(torch.load("Tables/DDQN.pt"))
+    testing_agent.target_net.load_state_dict(torch.load("Tables/DDQN2850.pt"))
     for _ in range(1):
         state = env.reset().reshape(48)
         while True:
