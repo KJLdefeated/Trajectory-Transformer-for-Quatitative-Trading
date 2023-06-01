@@ -7,13 +7,17 @@ import argparse
 import pickle
 import random
 import sys
+import os
 
 from decision_transformer.evaluation.evaluate_episodes import evaluate_episode, evaluate_episode_rtg
 from decision_transformer.models.decision_transformer import DecisionTransformer
 from decision_transformer.models.mlp_bc import MLPBCModel
 from decision_transformer.training.act_trainer import ActTrainer
 from decision_transformer.training.seq_trainer import SequenceTrainer
-from data.buildEnv import createEnv
+from data.buildEnv_inDT import createEnv
+
+os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+os.environ["CUDA_VISIBLE_DEVICES"] = '1'
 
 def discount_cumsum(x, gamma):
     discount_cumsum = np.zeros_like(x)
@@ -71,7 +75,7 @@ def experiment(
     act_dim = env.action_space.n
 
     # load dataset
-    dataset_path = f'data/{env_name}-{dataset}.pkl'
+    dataset_path = f'decision-transformer/gym/data/DDQN_1_stock.pkl'
     with open(dataset_path, 'rb') as f:
         trajectories = pickle.load(f)
 

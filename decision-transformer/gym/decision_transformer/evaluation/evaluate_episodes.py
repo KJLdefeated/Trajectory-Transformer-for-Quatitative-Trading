@@ -82,7 +82,7 @@ def evaluate_episode_rtg(
     state_mean = torch.from_numpy(state_mean).to(device=device)
     state_std = torch.from_numpy(state_std).to(device=device)
 
-    state = env.reset()
+    state = env.state_preprocess(env.reset())
     if mode == 'noise':
         state = state + np.random.normal(0, 0.1, size=state.shape)
 
@@ -113,10 +113,10 @@ def evaluate_episode_rtg(
             timesteps.to(dtype=torch.long),
         )
         actions[-1] = action
-        action = action.detach().cpu().numpy()
-
-        state, reward, done, _ = env.step(action)
-
+        choice = int(torch.argmax(action).detach().cpu().numpy())
+        # action = action.detach().cpu().numpy()
+        state, reward, done, _ = env.step(choice)
+        state = env.state_preprocess(state)
         cur_state = torch.from_numpy(state).to(device=device).reshape(1, state_dim)
         states = torch.cat([states, cur_state], dim=0)
         rewards[-1] = reward

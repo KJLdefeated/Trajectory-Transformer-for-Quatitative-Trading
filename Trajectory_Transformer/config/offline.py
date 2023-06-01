@@ -17,7 +17,7 @@ args_to_watch = [
 base = {
 
     'train': {
-        'N': 20,
+        'N': 100,
         'discount': 0.99,
         'n_layer': 4,
         'n_head': 4,
