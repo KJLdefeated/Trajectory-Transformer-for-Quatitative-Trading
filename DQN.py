@@ -34,7 +34,7 @@ class replay_buffer:
         Return:
             None
         """
-        self.memory.append([state, action, reward, next_state, done])
+        self.memory.append([state, action, reward, next_state.reshape(48), done])
 
     def sample(self, batch_size):
         """
@@ -87,7 +87,7 @@ class Net(nn.Module):
 
 class Agent:
     def __init__(
-        self, env, epsilon=0, learning_rate=0.0002, GAMMA=0.97, batch_size=32, capacity=10000
+        self, env, epsilon=10, learning_rate=0.0002, GAMMA=0.97, batch_size=32, capacity=10000
     ):
         """
         The agent learning how to control the action of the cart pole.
@@ -116,7 +116,7 @@ class Agent:
             self.evaluate_net.parameters(), lr=self.learning_rate
         )  # Adam is a method using to optimize the neural network
 
-    def learn(self, state, next_state, reward, done, action):
+    def learn(self):
         """
         - Implement the learning function.
         - Here are the hints to implement.
@@ -137,7 +137,7 @@ class Agent:
         Returns:
             None (Don't need to return anything)
         """
-        if self.count % 100 == 0:
+        if self.count % 10 == 0:
             self.target_net.load_state_dict(self.evaluate_net.state_dict())
 
         # Begin your code
@@ -145,31 +145,20 @@ class Agent:
         Sample trajectories of batch size from the replay buffer.
         Convert these sampled data into tensor.
         """
-        state = torch.tensor(np.array(state.reshape(48)), dtype=torch.float)
-        action = torch.tensor(np.array(action), dtype=torch.int64).unsqueeze(-1)
-        reward = torch.tensor(np.array(reward), dtype=torch.float)
-        next_state = torch.tensor(np.array(next_state.reshape(48)), dtype=torch.float)
-        done = torch.tensor(np.array(done), dtype=torch.float)
+        states, actions, rewards, next_states, dones = self.buffer.sample(self.batch_size)
+        states = torch.tensor(np.array(states), dtype=torch.float)
+        actions = torch.tensor(np.array(actions), dtype=torch.int64).unsqueeze(-1)
+        rewards = torch.tensor(np.array(rewards), dtype=torch.float)
+        next_states = torch.tensor(np.array(next_states), dtype=torch.float)
+        dones = torch.tensor(np.array(dones), dtype=torch.float)
+        
+        q_values = torch.gather(self.evaluate_net(states), 1, actions)
+        
+        next_actions = self.evaluate_net(next_states).argmax(dim=1, keepdim=True)
+        next_q_values = self.target_net(next_states).gather(1, next_actions).reshape(32)
+        target_q_values = (rewards + self.gamma * (1 - dones) * next_q_values).unsqueeze(1)
 
-        """
-        Forward the data to evaluate net and target net.
-        q_eval is predicted values from evaluate network which is extracted based on action.
-        q_next is actual values from target network. 
-        q_target is the expected Q-values obtained from the formula "reward + gamma * max(q_next)".
-        """
-        q_value = self.evaluate_net(state)[action]
-        next_action = torch.argmax(self.evaluate_net(next_state)).unsqueeze(-1)
-        next_q_value = self.target_net(next_state)[next_action]
-        target_q_value = (reward + self.gamma * (1 - done) * next_q_value)
-        """
-        Compute the loss of "q_eval" and "q_target" with nn.MSELoss().
-        """
-        loss = F.mse_loss(q_value, target_q_value)
-
-        """
-        Zero-out the gradients before doing backpropagation, or the gradient would be a combination of 
-        the old gradient. Next, do backpropagation, and update the parameters.
-        """
+        loss = F.mse_loss(q_values, target_q_values)
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
@@ -194,10 +183,12 @@ class Agent:
             Generate a random number. If the number is bigger than epsilonreturn the index of the maximum Q of the given state in Q-table.
         Or return random action.
             """
-            if np.random.uniform(0, 1) > self.epsilon:
-                action = torch.argmax(self.evaluate_net(Tensor(state).reshape(48))).item()
-            else:
-                action = np.random.randint(self.n_actions)
+            temp = np.random.random()
+            if temp < math.exp(-1*self.epsilon) or temp < 0.005:
+                return np.random.randint(self.n_actions)
+            # forward the state to nn and find the argmax of the actions
+            
+            action = torch.argmax(self.evaluate_net(Tensor(state).reshape(48))).item()
             # End your code
         return action
 
@@ -212,26 +203,34 @@ def train(env):
     agent = Agent(env)
     episode = 500
     rewards = []
-    num = 0
-    for _ in range(episode):
-        num += 1
+    for i_episode in range(episode):
         state = env.reset()
         count = 0
         while True:
             count += 1
             agent.count += 1
             # env.render()
-            action = agent.choose_action(state)
+            tempstate1 = state.reshape(48)
+            state = state.reshape(48)
+            for i in range(12):
+                for j in range(4):
+                    tempstate1[i*4+j] = (state[44+j] - state[4*i+j])/state[44+j]
+            action = agent.choose_action(tempstate1)
             next_state, reward, done, info = env.step(action)
-            agent.buffer.insert(state, int(action), reward, next_state, int(done))
+            tempstate2 = next_state.reshape(48)
+            next_state = next_state.reshape(48)
+            for i in range(12):
+                for j in range(4):
+                    tempstate2[i*4+j] = (next_state[44+j] - next_state[4*i+j])/next_state[44+j]
+            agent.buffer.insert(tempstate1, int(action), reward, tempstate2, int(done))
 
-            if len(agent.buffer) >= 1000:
-                agent.learn(state, next_state, reward, done, action)
+            if len(agent.buffer) >= 100:
+                agent.learn()
             if done:
                 rewards.append(count)
                 break
             state = next_state
-        print(num, info)
+        print(i_episode, info)
     total_rewards.append(rewards)
 
 
@@ -245,17 +244,19 @@ def test(env):
     """
     rewards = []
     testing_agent = Agent(env)
-    testing_agent.target_net.load_state_dict(torch.load("./Tables/DQN.pt"))
-    for _ in range(30):
+    #testing_agent.target_net.load_state_dict(torch.load("Tables/DQN2850.pt"))
+    for _ in range(1):
         state = env.reset().reshape(48)
-        count = 0
         while True:
-            count += 1
-            Q = testing_agent.target_net.forward(torch.FloatTensor(state)).squeeze(0).detach()
+            tempstate = state
+            for i in range(12):
+                for j in range(4):
+                    tempstate[i*4+j] = (state[44+j] - state[i*4+j])/state[44+j]
+            Q = testing_agent.target_net(
+                torch.FloatTensor(tempstate.reshape(48))).squeeze(0).detach()
             action = int(torch.argmax(Q).numpy())
             next_state, _, done, _ = env.step(action)
             if done:
-                rewards.append(count)
                 break
             state = next_state.reshape(48)
 
