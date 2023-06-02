@@ -12,10 +12,10 @@ import trajectory.datasets as datasets
 from trajectory.models.transformers import GPT
 
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-os.environ["CUDA_VISIBLE_DEVICES"] = '2'
+os.environ["CUDA_VISIBLE_DEVICES"] = '0'
 
 class Parser(utils.Parser):
-    dataset: str = 'stock_2330'
+    dataset: str = 'DDQN_1_2330'
     config: str = 'config.offline'
 
 #######################
@@ -111,7 +111,7 @@ trainer = trainer_config()
 
 ## scale number of epochs to keep number of updates constant
 #n_epochs = int(1e6 / len(dataset) * args.n_epochs_ref)
-n_epochs = 10000
+n_epochs = 3000
 save_freq = int(n_epochs // args.n_saves)
 
 for epoch in range(n_epochs):

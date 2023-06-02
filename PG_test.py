@@ -11,7 +11,7 @@ from torch.distributions import Categorical
 import torch.optim.lr_scheduler as Scheduler
 import buildEnv
 from torch import Tensor
-from torch.utils.tensorboard import SummaryWriter
+#from torch.utils.tensorboard import SummaryWriter
 
 # Define a useful tuple (optional)
 SavedAction = namedtuple('SavedAction', ['log_prob', 'value'])
@@ -33,7 +33,7 @@ class Policy(nn.Module):
         # Extract the dimensionality of state and action spaces
         self.discrete = isinstance(env.action_space, gym.spaces.Discrete)     
         self.action_dim = env.action_space.n if self.discrete else env.action_space.shape[0]
-        self.hidden_size = 4096
+        self.hidden_size = 500
         self.double()
 
         self.observation_dim = 1
@@ -86,7 +86,12 @@ class Policy(nn.Module):
         """
         
         ########## YOUR CODE HERE (3~5 lines) ##########
-        state = torch.Tensor(state)
+        state = state.reshape(-1)
+        tempstate = state        
+        for i in range(12):
+            for j in range(4):
+                tempstate[i*4+j] = (state[44+j] - state[i*4+j])/state[44+j]
+        state = torch.Tensor(tempstate)
         state = state.cuda()
         action, state_value= self.forward(state)
         m = Categorical(logits=action)
@@ -145,7 +150,7 @@ class Policy(nn.Module):
         del self.saved_actions[:]
 
 
-def train(lr=0.01, lr_decay=0.99):
+def train(lr=0.001, lr_decay=0.99):
     random_seed = 10
     global env 
     env = buildEnv.createEnv(2330)
@@ -153,7 +158,7 @@ def train(lr=0.01, lr_decay=0.99):
     torch.manual_seed(random_seed)  
 
 
-    writer = SummaryWriter("./tb_record_1/Policy_Gradient1-{}-{}".format(lr, lr_decay))
+    #writer = SummaryWriter("./tb_record_1/Policy_Gradient1-{}-{}".format(lr, lr_decay))
 
     """
         Train the model using SGD (via backpropagation)
@@ -215,11 +220,11 @@ def train(lr=0.01, lr_decay=0.99):
             
         # update EWMA reward and log the results
         ewma_reward = 0.05 * ep_reward + (1 - 0.05) * ewma_reward
-        print('Episode {}\tlength: {}\treward: {}\t ewma reward: {}\t profit: {}'.format(i_episode, t, ep_reward, ewma_reward, env._total_profit))
+        print('Episode {}\tlength: {}\treward: {}\t ewma reward: {}\t profit: {} \t loss: {}'.format(i_episode, t, ep_reward, ewma_reward, env._total_profit, loss))
 
-        writer.add_scalar('EWMA reward', ewma_reward, i_episode)
-        writer.add_scalar('Episode reward', ep_reward, i_episode)
-        writer.add_scalar('Episode profit', env._total_profit, i_episode)
+        #writer.add_scalar('EWMA reward', ewma_reward, i_episode)
+        #writer.add_scalar('Episode reward', ep_reward, i_episode)
+        #writer.add_scalar('Episode profit', env._total_profit, i_episode)
 
         if ep_reward == pre_reward:
             same_count += 1

@@ -20,11 +20,11 @@ from trajectory.search import (
     update_context,
 )
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-os.environ["CUDA_VISIBLE_DEVICES"] = '3'
+os.environ["CUDA_VISIBLE_DEVICES"] = '0'
 
 code = '2330'
 class Parser(utils.Parser):
-    dataset: str = 'stock_'+code
+    dataset: str = 'DDQN_1_2330'
     config: str = 'config.offline'
 
 #######################
@@ -67,17 +67,28 @@ value_fn = lambda x: discretizer.value_fn(x, args.percentile)
 observation = env.reset()
 total_reward = 0
 
+def state_preprocess(state):
+    tempstate = state
+    for i in range(12):
+        for j in range(4):
+            tempstate[i*4+j] = (state[44+j] - state[i*4+j])/state[44+j]
+    return tempstate
 ## observations for rendering
+observation = observation.reshape(-1)
+observation = state_preprocess(observation)
 rollout = [observation.copy()]
 
 ## previous (tokenized) transitions for conditioning transformer
 context = []
 
+
+
 T = 1187
 for t in range(T):
 
     #observation = preprocess_fn(observation)
-    observation = observation.reshape(-1)
+    #observation = observation.reshape(-1)
+    #observation = state_preprocess(observation)
 
     if t % args.plan_freq == 0:
         ## concatenate previous transitions and current observations to input to model
@@ -108,6 +119,7 @@ for t in range(T):
     #score = env.get_normalized_score(total_reward)
 
     ## update rollout observations and context transitions
+    next_observation = state_preprocess(next_observation.reshape(-1))
     rollout.append(next_observation.copy())
     context = update_context(context, discretizer, observation, action, reward, args.max_context_transitions)
     print(

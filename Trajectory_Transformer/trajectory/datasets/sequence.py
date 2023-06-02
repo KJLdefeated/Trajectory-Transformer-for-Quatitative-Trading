@@ -53,7 +53,7 @@ class SequenceDataset(torch.utils.data.Dataset):
         self.device = device
         
         print(f'[ datasets/sequence ] Loading...', end=' ', flush=True)
-        with open('Trajectory_Transformer/trajectory/datasets/Random/'+env+'.pkl', 'rb') as f:
+        with open('Trajectory_Transformer/trajectory/datasets/Medium/'+env+'.pkl', 'rb') as f:
             dataset = pickle.load(f)
         print('✓')
 
@@ -62,12 +62,12 @@ class SequenceDataset(torch.utils.data.Dataset):
         #     print(f'[ datasets/sequence ] Modifying environment')
         #     dataset = preprocess_fn(dataset)
         ##
-        observations = dataset['observations']
-        actions = dataset['actions']
-        next_observations = dataset['next_observations']
-        rewards = dataset['rewards']
-        terminals = dataset['terminals']
-        realterminals = [False]*len(dataset['terminals'])
+        observations = np.array(dataset['observations'])
+        actions = np.array(dataset['actions'])
+        next_observations = np.array(dataset['next_observations'])
+        rewards = np.array(dataset['rewards'])
+        terminals = np.array(dataset['terminals'])
+        realterminals = np.array(dataset['terminals'])
 
         self.observations_raw = observations
         self.actions_raw = actions

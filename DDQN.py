@@ -277,6 +277,37 @@ def test(env):
     print(env._total_profit)
     print(env._total_reward)
 
+def state_preprocess(state):
+    tempstate = state
+    for i in range(12):
+        for j in range(4):
+            tempstate[i*4+j] = (state[44+j] - state[i*4+j])/state[44+j]
+    return tempstate
+
+def gen_offline_data(episodes, env):
+    agent = Agent(env)
+    agent.target_net.load_state_dict(torch.load("./Tables/DDQN.pt"))
+    episode_data = {}
+    for k in ['observations', 'next_observations', 'actions', 'rewards', 'terminals']:
+        episode_data[k] = []
+    for _ in range(episodes):
+        observation = env.reset()
+        observation = state_preprocess(observation.reshape(-1))
+        while True:
+            Q = agent.target_net.forward(torch.FloatTensor(observation)).squeeze(0).detach()
+            action = int(torch.argmax(Q).numpy())
+            next_observation, reward, done, info = env.step(action)
+            episode_data['observations'].append(np.array(observation))
+            next_observation = state_preprocess(next_observation.reshape(-1))
+            episode_data['next_observations'].append(np.array(next_observation))
+            episode_data['actions'].append(np.array(Q))
+            episode_data['rewards'].append(np.array([reward]).astype('float32'))
+            episode_data['terminals'].append(np.array([done]))
+            observation = next_observation
+            if done:
+                print(info)
+                break
+    return episode_data
 
 if __name__ == "__main__":
     env = buildEnv.createEnv(2330, frame_bounds=(1200,1700))        
