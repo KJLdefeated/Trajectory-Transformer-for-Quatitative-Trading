@@ -259,7 +259,7 @@ def test(env):
         None (Don't need to return anything)
     """
     testing_agent = Agent(env)
-    testing_agent.target_net.load_state_dict(torch.load("Tables/DDQN2850.pt"))
+    testing_agent.target_net.load_state_dict(torch.load("Tables/DDQN.pt"))
     for _ in range(1):
         state = env.reset().reshape(48)
         while True:
@@ -279,7 +279,7 @@ def test(env):
 
 
 if __name__ == "__main__":
-    env = buildEnv.createEnv(2330)        
+    env = buildEnv.createEnv(2330, frame_bounds=(1200,1700))        
     os.makedirs("./Tables", exist_ok=True)
     os.makedirs("./Rewards", exist_ok=True)
     # training section:
