@@ -73,6 +73,21 @@ class MyStocksEnv(StocksEnv):
                 if(self.prices[self._current_tick + i] < self.prices[self._current_tick]):
                     ismin = False
         return ismax, ismin
+    
+    def _update_profit(self, action):
+        trade = False
+        if ((action == Actions.Buy.value and self._position == Positions.Short) or
+            (action == Actions.Sell.value and self._position == Positions.Long)):
+            trade = True
+
+        if trade or self._done:
+            current_price = self.prices[self._current_tick]
+            last_trade_price = self.prices[self._last_trade_tick]
+
+            if self._position == Positions.Long:
+                shares = (self._total_profit) / last_trade_price
+                self._total_profit = (shares) * current_price
+
 
 def state_preprocess(state):
     tempstate = state

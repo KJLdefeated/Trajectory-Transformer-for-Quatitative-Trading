@@ -54,5 +54,5 @@ def test(env):
 
 
 if __name__ == "__main__":
-    env = buildEnv.createEnv(2303,window_size=0, frame_bounds=(0,1200))        
+    env = buildEnv.createEnv(2303,window_size=0, frame_bounds=(1200,1700))        
     test(env)
