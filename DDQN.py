@@ -276,7 +276,7 @@ def test(env):
             state = next_state.reshape(48)
     print(env._total_profit)
     print(env._total_reward)
-    env.render_all()
+    env.render()
     env.save_rendering('Images/DDQN.png')
 
 def state_preprocess(state):
@@ -292,8 +292,9 @@ def gen_offline_data(episodes, env):
     episode_data = {}
     for k in ['observations', 'next_observations', 'actions', 'rewards', 'terminals']:
         episode_data[k] = []
-    for _ in range(episodes):
+    for e in range(episodes):
         observation = env.reset()
+        env.seed(e)
         observation = state_preprocess(observation.reshape(-1))
         while True:
             Q = agent.target_net.forward(torch.FloatTensor(observation)).squeeze(0).detach()
@@ -313,11 +314,11 @@ def gen_offline_data(episodes, env):
 
 if __name__ == "__main__":
     env = buildEnv.createEnv(2330, frame_bounds=(1200,1700))        
-    os.makedirs("./Tables", exist_ok=True)
-    os.makedirs("./Rewards", exist_ok=True)
+    #os.makedirs("./Tables", exist_ok=True)
+    #os.makedirs("./Rewards", exist_ok=True)
     # training section:
-    for i in range(1):
-        print(f"#{i + 1} training progress")
+    #for i in range(1):
+    #    print(f"#{i + 1} training progress")
         #with tf.device('/device:GPU:0'):
         #train(env)
         

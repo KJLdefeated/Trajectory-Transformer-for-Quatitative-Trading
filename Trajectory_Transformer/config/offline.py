@@ -17,7 +17,7 @@ args_to_watch = [
 base = {
 
     'train': {
-        'N': 100,
+        'N': 50,
         'discount': 0.99,
         'n_layer': 4,
         'n_head': 4,
@@ -57,8 +57,8 @@ base = {
         'renderer': 'Renderer',
 
         'plan_freq': 1,
-        'horizon': 8,
-        'beam_width': 64,
+        'horizon': 2,
+        'beam_width': 32,
         'n_expand': 2,
 
         'k_obs': 1,

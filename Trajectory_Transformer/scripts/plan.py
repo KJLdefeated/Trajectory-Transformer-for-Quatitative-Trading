@@ -22,11 +22,11 @@ from trajectory.search import (
     update_context,
 )
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-os.environ["CUDA_VISIBLE_DEVICES"] = '3'
+os.environ["CUDA_VISIBLE_DEVICES"] = '2'
 
 
 class Parser(utils.Parser):
-    dataset: str = 'stock_2330'
+    dataset: str = 'DDQN_1_2330'
     config: str = 'config.offline'
 
 #######################
@@ -73,7 +73,7 @@ value_fn = lambda x: discretizer.value_fn(x, args.percentile)
 ###### main loop ######
 #######################
 
-for test_ep in range(10, 110, 10):
+for test_ep in [100]:
     env = createEnv(code)
     env.seed(test_ep)
     observation = env.reset()
