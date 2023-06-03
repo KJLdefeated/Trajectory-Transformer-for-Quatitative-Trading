@@ -104,7 +104,7 @@ class Policy(nn.Module):
         return action.item()
 
 
-    def calculate_loss(self, gamma=0.999):
+    def calculate_loss(self, gamma=0.999, lambda_ = 0.99):
         """
             Calculate the loss (= policy loss + value loss) to perform backprop later
             TODO:
@@ -131,14 +131,19 @@ class Policy(nn.Module):
         returns = returns.cuda()
 
         returns = (returns - returns.mean()) / (returns.std())
+        returns = returns.detach()
+
         log_probs = [action.log_prob for action in saved_actions]
         values = [action.value for action  in saved_actions]
+
+        advantages = GAE(gamma, lambda_, None)(self.rewards, values)
+        advantages = advantages.detach()
+
         action_log_probs = torch.stack(log_probs, dim=0)
         values = torch.stack(values, dim=0)[:,0]
-        with torch.no_grad():
-            advantages = returns - values
+
         policy_losses = -(advantages * action_log_probs).sum()
-        value_losses = F.mse_loss(values, returns, reduction='sum')
+        value_losses = F.mse_loss(values, returns).sum()
         loss = policy_losses + value_losses
         ########## END OF YOUR CODE ##########
         
@@ -149,8 +154,38 @@ class Policy(nn.Module):
         del self.rewards[:]
         del self.saved_actions[:]
 
+class GAE:
+    def __init__(self, gamma, lambda_, num_steps):
+        self.gamma = gamma
+        self.lambda_ = lambda_
+        self.num_steps = num_steps          # set num_steps = None to adapt full batch
 
-def train(lr=0.001, lr_decay=0.9999):
+    def __call__(self, rewards, values, done=False):
+        """
+        Implement Generalized Advantage Estimation (GAE) for your value prediction
+        TODO (1): Pass correct corresponding inputs (rewards, values, and done) into the function arguments
+        TODO (2): Calculate the Generalized Advantage Estimation and return the obtained value
+        """
+        ########## YOUR CODE HERE (8-15 lines) ##########
+        advantages = []
+        advantage = 0
+        next_value = 0
+        t = 0
+        for r, v in zip(reversed(rewards), reversed(values)):
+            t += 1
+            td_error = r + next_value * self.gamma - v
+            advantage = td_error + advantage * self.gamma * self.lambda_
+            next_value = v
+            advantages.insert(0, advantage)
+            if self.num_steps is not None and t > self.num_steps:
+                break
+        advantages = torch.Tensor(advantages)
+        advantages = advantages.cuda()
+        advantages = (advantages - advantages.mean()) / (advantages.std())
+        return advantages
+        ########## END OF YOUR CODE ##########
+
+def train(lr=0.001, lr_decay=0.999, gamma=0.999, lambda_ = 0.999):
     random_seed = 10
     global env 
     env = buildEnv.createEnv(2330)
@@ -158,7 +193,7 @@ def train(lr=0.001, lr_decay=0.9999):
     torch.manual_seed(random_seed)  
 
 
-    writer = SummaryWriter("./tb_record_1/Policy_Gradient1-{}-{}".format(lr, lr_decay))
+    writer = SummaryWriter("./tb_record_1/Policy_Gradient_GAE-{}-{}-{}-{}".format(lr, lr_decay, gamma, lambda_))
 
     """
         Train the model using SGD (via backpropagation)
@@ -172,13 +207,15 @@ def train(lr=0.001, lr_decay=0.9999):
     
     # Instantiate the policy model and the optimizer
     model = Policy()
+    
     optimizer = optim.Adam(model.parameters(), lr=lr)
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     model.to(device)
     
+    model.load_state_dict(torch.load('./Tables/PG_GAE-{}-{}.pth'.format(lr, lr_decay)))
     # Learning rate scheduler (optional)
-    scheduler = Scheduler.StepLR(optimizer, step_size=100, gamma=lr_decay)
+    #scheduler = Scheduler.StepLR(optimizer, step_size=100, gamma=lr_decay)
     
     # EWMA reward for tracking the learning progress
     ewma_reward = 0
@@ -199,9 +236,14 @@ def train(lr=0.001, lr_decay=0.9999):
         # For each episode, only run 9999 steps to avoid entering infinite loop during the learning process
         
         ########## YOUR CODE HERE (10-15 lines) ##########
+        sell = 0
+        buy = 0
         while True:
             t += 1
             action = model.select_action(state)
+            if action == 0: sell += 1
+            else: buy += 1
+
             state, reward, done, _ = env.step(action)
             ep_reward += reward
             model.rewards.append(reward)
@@ -210,17 +252,16 @@ def train(lr=0.001, lr_decay=0.9999):
                 break
         
         optimizer.zero_grad()
-        loss = model.calculate_loss()
+        loss = model.calculate_loss(gamma, lambda_)
         loss.backward()
         optimizer.step()
-        scheduler.step()
-        
+        #scheduler.step()
         model.clear_memory()
         ########## END OF YOUR CODE ##########
             
         # update EWMA reward and log the results
         ewma_reward = 0.05 * ep_reward + (1 - 0.05) * ewma_reward
-        print('Episode {}\tlength: {}\treward: {}\t ewma reward: {}\t profit: {} \t loss: {}'.format(i_episode, t, ep_reward, ewma_reward, env._total_profit, loss))
+        print('Episode {}\treward: {}\tprofit: {}\tloss: {}\tsell: {}\tbuy: {}'.format(i_episode, ep_reward, env._total_profit, loss, sell, buy))
 
         writer.add_scalar('EWMA reward', ewma_reward, i_episode)
         writer.add_scalar('Episode reward', ep_reward, i_episode)
@@ -231,7 +272,7 @@ def train(lr=0.001, lr_decay=0.9999):
         else:
             same_count = 0
         pre_reward = ep_reward
-        if same_count >= 100:
+        if same_count >= 500:
             pre_reward = 0
             same_count = 0
             break
@@ -239,12 +280,14 @@ def train(lr=0.001, lr_decay=0.9999):
         if ewma_reward > 300:
             if not os.path.isdir("./Tables"):
                 os.mkdir("./Tables")
-            torch.save(model.state_dict(), './Tables/PG_test.pth')
+            torch.save(model.state_dict(), './Tables/PG_GAE.pth')
             print("Solved! Running reward is now {} and "
                   "the last episode runs to {} time steps!".format(ewma_reward, t))
             break
         """
-    torch.save(model.state_dict(), './Tables/PG-{}-{}.pth'.format(lr, lr_decay))
+        if (i_episode - 1) % 100 == 0:
+            torch.save(model.state_dict(), './Tables/PG_GAE-{}-{}.pth'.format(lr, lr_decay))
+    torch.save(model.state_dict(), './Tables/PG_GAE-{}-{}.pth'.format(lr, lr_decay))
     env.close()
     return -ewma_reward
    
@@ -259,7 +302,7 @@ def test(n_episodes=10):
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     model.to(device)
     
-    model.load_state_dict(torch.load('./Tables/PG-{}-{}.pth'.format(lr, lr_decay)))
+    model.load_state_dict(torch.load('./Tables/PG_GAE-{}-{}.pth'.format(0.001, 0.999)))
     
     render = False
     max_episode_len = 10000
