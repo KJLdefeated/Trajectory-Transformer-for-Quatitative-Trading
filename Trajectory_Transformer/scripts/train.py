@@ -10,23 +10,18 @@ sys.path.insert(0, parent_dir)
 import trajectory.utils as utils
 import trajectory.datasets as datasets
 from trajectory.models.transformers import GPT
+from torch.utils.tensorboard import SummaryWriter
+from tqdm import tqdm
 
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-os.environ["CUDA_VISIBLE_DEVICES"] = '0'
+os.environ["CUDA_VISIBLE_DEVICES"] = '3'
 
 class Parser(utils.Parser):
-    dataset: str = 'DDQN_1_2330'
+    dataset: str = 'TT_stock_2330_50'
     config: str = 'config.offline'
 
-#######################
-######## setup ########
-#######################
-
+tb_save_path = 'tb_record_1'
 args = Parser().parse_args('train')
-
-#######################
-####### dataset #######
-#######################
 
 #env = datasets.load_environment(args.dataset)
 
@@ -48,10 +43,6 @@ dataset = dataset_config()
 obs_dim = dataset.observation_dim
 act_dim = dataset.action_dim
 transition_dim = dataset.joined_dim
-
-#######################
-######## model ########
-#######################
 
 block_size = args.subsampled_sequence_length * transition_dim - 1
 print(
@@ -78,10 +69,6 @@ model_config = utils.Config(
 model = model_config()
 model.to(args.device)
 
-#######################
-####### trainer #######
-#######################
-
 warmup_tokens = len(dataset) * block_size ## number of tokens seen per epoch
 final_tokens = 20 * warmup_tokens
 
@@ -105,25 +92,20 @@ trainer_config = utils.Config(
 
 trainer = trainer_config()
 
-#######################
-###### main loop ######
-#######################
+n_epochs = 100
+save_freq = 10
 
-## scale number of epochs to keep number of updates constant
-#n_epochs = int(1e6 / len(dataset) * args.n_epochs_ref)
-n_epochs = 3000
-save_freq = int(n_epochs // args.n_saves)
-
-for epoch in range(n_epochs):
+train_loss_writer = SummaryWriter(tb_save_path + '/train_loss/TT/' + args.dataset)
+for epoch in range(1, n_epochs+1):
     print(f'\nEpoch: {epoch} / {n_epochs} | {args.dataset} | {args.exp_name}')
 
-    trainer.train(model, dataset)
-
+    losses = trainer.train(model, dataset)
+    train_loss_writer.add_scalar('Training Loss', np.mean(losses), epoch)
     ## get greatest multiple of `save_freq` less than or equal to `save_epoch`
-    save_epoch = (epoch + 1) // save_freq * save_freq
-    statepath = os.path.join(args.savepath, f'state_{save_epoch}.pt')
-    print(f'Saving model to {statepath}')
+    if epoch % save_freq == 0:
+        statepath = os.path.join(args.savepath, f'state_{epoch}.pt')
+        print(f'Saving model to {statepath}')
 
-    ## save state to disk
-    state = model.state_dict()
-    torch.save(state, statepath)
+        ## save state to disk
+        state = model.state_dict()
+        torch.save(state, statepath)

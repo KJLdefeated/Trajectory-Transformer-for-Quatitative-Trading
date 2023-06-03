@@ -13,6 +13,8 @@ sys.path.insert(0, parent_dir)
 import trajectory.utils as utils
 import trajectory.datasets as datasets
 from trajectory.datasets.Random.buildEnv import createEnv
+from matplotlib import pyplot as plt
+from torch.utils.tensorboard import SummaryWriter
 from trajectory.search import (
     beam_plan,
     make_prefix,
@@ -20,11 +22,11 @@ from trajectory.search import (
     update_context,
 )
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-os.environ["CUDA_VISIBLE_DEVICES"] = '0'
+os.environ["CUDA_VISIBLE_DEVICES"] = '3'
 
-code = '2330'
+
 class Parser(utils.Parser):
-    dataset: str = 'DDQN_1_2330'
+    dataset: str = 'stock_2330'
     config: str = 'config.offline'
 
 #######################
@@ -32,23 +34,30 @@ class Parser(utils.Parser):
 #######################
 
 args = Parser().parse_args('plan')
+code = '2330'
+img_save_path = 'Img'
+
 
 #######################
 ####### models ########
 #######################
 
-dataset = utils.load_from_config(args.logbase, args.dataset, args.gpt_loadpath,
-        'data_config.pkl')
 
-gpt, gpt_epoch = utils.load_model(args.logbase, args.dataset, args.gpt_loadpath,
-        epoch=args.gpt_epoch, device=args.device)
+dataset = utils.load_from_config(args.logbase, args.dataset, args.gpt_loadpath,'data_config.pkl')
+
+
 
 #######################
 ####### dataset #######
 #######################
+def state_preprocess(state):
+    tempstate = state
+    for i in range(12):
+        for j in range(4):
+            tempstate[i*4+j] = (state[44+j] - state[i*4+j])/state[44+j]
+    return tempstate
 
 
-env = createEnv(code)
 #renderer = utils.make_renderer(args)
 timer = utils.timer.Timer()
 
@@ -64,86 +73,80 @@ value_fn = lambda x: discretizer.value_fn(x, args.percentile)
 ###### main loop ######
 #######################
 
-observation = env.reset()
-total_reward = 0
+for test_ep in range(10, 110, 10):
+    env = createEnv(code)
+    env.seed(test_ep)
+    observation = env.reset()
+    observation = observation.reshape(-1)
+    total_reward = 0
+    observation = state_preprocess(observation)
+    rollout = [observation.copy()]
 
-def state_preprocess(state):
-    tempstate = state
-    for i in range(12):
-        for j in range(4):
-            tempstate[i*4+j] = (state[44+j] - state[i*4+j])/state[44+j]
-    return tempstate
-## observations for rendering
-observation = observation.reshape(-1)
-observation = state_preprocess(observation)
-rollout = [observation.copy()]
+    context = []
+    tb_save_path = 'tb_record_1/TT_' + args.dataset + '_{}'.format(test_ep)
+    gpt, gpt_epoch = utils.load_model(
+        args.logbase, 
+        args.dataset, 
+        args.gpt_loadpath,
+        epoch=test_ep, 
+        device=args.device)
+    reward_writer = SummaryWriter(tb_save_path)
+    T = 1187
+    for t in range(T):
 
-## previous (tokenized) transitions for conditioning transformer
-context = []
+        #observation = preprocess_fn(observation)
+        #observation = observation.reshape(-1)
+        #observation = state_preprocess(observation)
 
+        if t % args.plan_freq == 0:
+            ## concatenate previous transitions and current observations to input to model
+            prefix = make_prefix(discretizer, context, observation, args.prefix_context)
 
+            ## sample sequence from model beginning with `prefix`
+            sequence = beam_plan(
+                gpt, value_fn, prefix,
+                args.horizon, args.beam_width, args.n_expand, observation_dim, action_dim,
+                discount, args.max_context_transitions, verbose=args.verbose,
+                k_obs=args.k_obs, k_act=args.k_act, cdf_obs=args.cdf_obs, cdf_act=args.cdf_act,
+            )
 
-T = 1187
-for t in range(T):
+        else:
+            sequence = sequence[1:]
 
-    #observation = preprocess_fn(observation)
-    #observation = observation.reshape(-1)
-    #observation = state_preprocess(observation)
+        ## [ horizon x transition_dim ] convert sampled tokens to continuous trajectory
+        sequence_recon = discretizer.reconstruct(sequence)
 
-    if t % args.plan_freq == 0:
-        ## concatenate previous transitions and current observations to input to model
-        prefix = make_prefix(discretizer, context, observation, args.prefix_context)
+        ## [ action_dim ] index into sampled trajectory to grab first action
+        action = extract_actions(sequence_recon, observation_dim, action_dim, t=0)
+        
+        ## execute action in environment
+        next_observation, reward, terminal, info = env.step(np.argmax(action))
 
-        ## sample sequence from model beginning with `prefix`
-        sequence = beam_plan(
-            gpt, value_fn, prefix,
-            args.horizon, args.beam_width, args.n_expand, observation_dim, action_dim,
-            discount, args.max_context_transitions, verbose=args.verbose,
-            k_obs=args.k_obs, k_act=args.k_act, cdf_obs=args.cdf_obs, cdf_act=args.cdf_act,
+        ## update return
+        total_reward += reward
+        #score = env.get_normalized_score(total_reward)
+
+        ## update rollout observations and context transitions
+        next_observation = state_preprocess(next_observation.reshape(-1))
+        rollout.append(next_observation.copy())
+        context = update_context(context, discretizer, observation, action, reward, args.max_context_transitions)
+        print(
+            f'[ plan ] t: {t} / {T} | r: {reward:.2f} | R: {total_reward:.2f} '
+            f'time: {timer():.2f} | {args.dataset} | {args.exp_name} | {args.suffix}\n'
         )
+        print(info, action)
+        reward_writer.add_scalar('Total reward', total_reward, t)
 
-    else:
-        sequence = sequence[1:]
+        if terminal: 
+            print(info)
+            break
 
-    ## [ horizon x transition_dim ] convert sampled tokens to continuous trajectory
-    sequence_recon = discretizer.reconstruct(sequence)
+        observation = next_observation
 
-    ## [ action_dim ] index into sampled trajectory to grab first action
-    action = extract_actions(sequence_recon, observation_dim, action_dim, t=0)
-
-    ## execute action in environment
-    next_observation, reward, terminal, info = env.step(np.argmax(action))
-
-    ## update return
-    total_reward += reward
-    #score = env.get_normalized_score(total_reward)
-
-    ## update rollout observations and context transitions
-    next_observation = state_preprocess(next_observation.reshape(-1))
-    rollout.append(next_observation.copy())
-    context = update_context(context, discretizer, observation, action, reward, args.max_context_transitions)
-    print(
-        f'[ plan ] t: {t} / {T} | r: {reward:.2f} | R: {total_reward:.2f} '
-        f'time: {timer():.2f} | {args.dataset} | {args.exp_name} | {args.suffix}\n'
-    )
-    print(info, action)
-
-    ## visualization
-    #if t % args.vis_freq == 0 or terminal or t == T:
-
-    #    ## save current plan
-    #    renderer.render_plan(join(args.savepath, f'{t}_plan.mp4'), sequence_recon, env.state_vector())
-
-    #    ## save rollout thus far
-    #    renderer.render_rollout(join(args.savepath, f'rollout.mp4'), rollout, fps=80)
-
-    if terminal: 
-        print(info)
-        break
-
-    observation = next_observation
-
-## save result as a json file
-json_path = join(args.savepath, 'rollout.json')
-json_data = {'step': t, 'return': total_reward, 'term': terminal, 'gpt_epoch': gpt_epoch}
-json.dump(json_data, open(json_path, 'w'), indent=2, sort_keys=True)
+    ## Show result
+    env.render_all()
+    env.save_rendering('Images/TT_' + args.dataset + '_{}.png'.format(test_ep))
+    ## save result as a json file
+    json_path = join(args.savepath, 'rollout.json')
+    json_data = {'step': t, 'return': total_reward, 'term': terminal, 'gpt_epoch': gpt_epoch}
+    json.dump(json_data, open(json_path, 'w'), indent=2, sort_keys=True)

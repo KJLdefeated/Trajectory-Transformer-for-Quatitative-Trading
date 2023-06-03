@@ -53,7 +53,7 @@ class SequenceDataset(torch.utils.data.Dataset):
         self.device = device
         
         print(f'[ datasets/sequence ] Loading...', end=' ', flush=True)
-        with open('Trajectory_Transformer/trajectory/datasets/Medium/'+env+'.pkl', 'rb') as f:
+        with open('Trajectory_Transformer/trajectory/datasets/Random/'+env+'.pkl', 'rb') as f:
             dataset = pickle.load(f)
         print('✓')
 

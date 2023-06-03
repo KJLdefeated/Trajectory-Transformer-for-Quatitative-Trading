@@ -276,6 +276,8 @@ def test(env):
             state = next_state.reshape(48)
     print(env._total_profit)
     print(env._total_reward)
+    env.render_all()
+    env.save_rendering('Images/DDQN.png')
 
 def state_preprocess(state):
     tempstate = state
@@ -311,11 +313,11 @@ def gen_offline_data(episodes, env):
 
 if __name__ == "__main__":
     env = buildEnv.createEnv(2330)        
-    os.makedirs("./Tables", exist_ok=True)
-    os.makedirs("./Rewards", exist_ok=True)
-    # training section:
-    for i in range(1):
-        print(f"#{i + 1} training progress")
+    # os.makedirs("./Tables", exist_ok=True)
+    # os.makedirs("./Rewards", exist_ok=True)
+    # # training section:
+    # for i in range(1):
+    #     print(f"#{i + 1} training progress")
         #with tf.device('/device:GPU:0'):
         #train(env)
         

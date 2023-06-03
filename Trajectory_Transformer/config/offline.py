@@ -2,7 +2,7 @@ from trajectory.utils import watch
 
 #------------------------ base ------------------------#
 
-logbase = 'logs/'
+logbase = 'Trajectory_Transformer/scripts/logs'
 gpt_expname = 'gpt/azure'
 
 ## automatically make experiment names for planning
@@ -40,7 +40,7 @@ base = {
 
         'step': 1,
         'subsampled_sequence_length': 10,
-        'termination_penalty': -100,
+        'termination_penalty': 0,
         'exp_name': gpt_expname,
 
         'discretizer': 'QuantileDiscretizer',
@@ -57,8 +57,8 @@ base = {
         'renderer': 'Renderer',
 
         'plan_freq': 1,
-        'horizon': 10,
-        'beam_width': 128,
+        'horizon': 8,
+        'beam_width': 64,
         'n_expand': 2,
 
         'k_obs': 1,

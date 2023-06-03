@@ -74,6 +74,12 @@ class MyStocksEnv(StocksEnv):
                     ismin = False
         return ismax, ismin
 
+def state_preprocess(state):
+    tempstate = state
+    for i in range(12):
+        for j in range(4):
+            tempstate[i*4+j] = (state[44+j] - state[i*4+j])/state[44+j]
+    return tempstate
 
 def createEnv(stock_no, window_size = 12, frame_bounds = (12, 1200)):
     csv_name = './dataset/stock_data_' + str(stock_no) + '.csv'

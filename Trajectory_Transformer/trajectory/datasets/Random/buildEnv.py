@@ -74,6 +74,28 @@ class MyStocksEnv(StocksEnv):
                     ismin = False
         return ismax, ismin
 
+    def _update_profit(self, action):
+        trade = False
+        if ((action == Actions.Buy.value and self._position == Positions.Short) or
+            (action == Actions.Sell.value and self._position == Positions.Long)):
+            trade = True
+
+        if trade or self._done:
+            current_price = self.prices[self._current_tick]
+            last_trade_price = self.prices[self._last_trade_tick]
+
+            if self._position == Positions.Long:
+                shares = (self._total_profit) / last_trade_price
+                self._total_profit = (shares) * current_price
+
+
+def state_preprocess(state):
+    state = state.reshape(-1)
+    tempstate = state
+    for i in range(12):
+        for j in range(4):
+            tempstate[i*4+j] = (state[44+j] - state[i*4+j])/state[44+j]
+    return tempstate
 
 def createEnv(stock_no, window_size = 12, frame_bounds = (12, 1200)):
     csv_name = './dataset/stock_data_' + str(stock_no) + '.csv'
