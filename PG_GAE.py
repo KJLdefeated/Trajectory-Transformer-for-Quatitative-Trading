@@ -92,7 +92,8 @@ class Policy(nn.Module):
             for j in range(4):
                 tempstate[i*4+j] = (state[44+j] - state[i*4+j])/state[44+j]
         state = torch.Tensor(tempstate)
-        state = state.cuda()
+        if torch.cuda.is_available():
+            state = state.cuda()
         action, state_value= self.forward(state)
         m = Categorical(logits=action)
         action = m.sample()
@@ -128,7 +129,8 @@ class Policy(nn.Module):
         returns.reverse()
         returns = torch.Tensor(returns)
 
-        returns = returns.cuda()
+        if torch.cuda.is_available():
+            returns = returns.cuda()
 
         returns = (returns - returns.mean()) / (returns.std())
         returns = returns.detach()
@@ -180,7 +182,8 @@ class GAE:
             if self.num_steps is not None and t > self.num_steps:
                 break
         advantages = torch.Tensor(advantages)
-        advantages = advantages.cuda()
+        if torch.cuda.is_available():
+            advantages = advantages.cuda()
         advantages = (advantages - advantages.mean()) / (advantages.std())
         return advantages
         ########## END OF YOUR CODE ##########
@@ -213,8 +216,8 @@ def train(lr=0.001, lr_decay=0.999, gamma=0.999, lambda_ = 0.999):
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     model.to(device)
     
-    model.load_state_dict(torch.load('./Tables/PG_GAE-{}-{}.pth'.format(lr, lr_decay)))
-    # Learning rate scheduler (optional)
+    model.load_state_dict(torch.load('./Tables/PG_GAE-{}-{}(old).pth'.format(lr, lr_decay)))
+    
     #scheduler = Scheduler.StepLR(optimizer, step_size=100, gamma=lr_decay)
     
     # EWMA reward for tracking the learning progress
@@ -224,7 +227,7 @@ def train(lr=0.001, lr_decay=0.999, gamma=0.999, lambda_ = 0.999):
     same_count = 0
     
     # run inifinitely many episodes
-    for i_episode in range(5000):
+    for i_episode in range(10000):
         # reset environment and episode reward
         state = env.reset()
         ep_reward = 0
