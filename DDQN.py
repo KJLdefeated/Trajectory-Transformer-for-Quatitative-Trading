@@ -314,13 +314,13 @@ def gen_offline_data(episodes, env):
 
 if __name__ == "__main__":
     env = buildEnv.createEnv(2330, frame_bounds=(1200,1700))        
-    #os.makedirs("./Tables", exist_ok=True)
-    #os.makedirs("./Rewards", exist_ok=True)
+    os.makedirs("./Tables", exist_ok=True)
+    os.makedirs("./Rewards", exist_ok=True)
     # training section:
-    #for i in range(1):
-    #    print(f"#{i + 1} training progress")
+    for i in range(1):
+        print(f"#{i + 1} training progress")
         #with tf.device('/device:GPU:0'):
-        #train(env)
+        train(env)
         
     # testing section:
     test(env)
