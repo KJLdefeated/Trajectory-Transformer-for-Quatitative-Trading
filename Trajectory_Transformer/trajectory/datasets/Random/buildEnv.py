@@ -73,7 +73,7 @@ class MyStocksEnv(StocksEnv):
                 if(self.prices[self._current_tick + i] < self.prices[self._current_tick]):
                     ismin = False
         return ismax, ismin
-
+    
     def _update_profit(self, action):
         trade = False
         if ((action == Actions.Buy.value and self._position == Positions.Short) or
@@ -90,7 +90,6 @@ class MyStocksEnv(StocksEnv):
 
 
 def state_preprocess(state):
-    state = state.reshape(-1)
     tempstate = state
     for i in range(12):
         for j in range(4):
