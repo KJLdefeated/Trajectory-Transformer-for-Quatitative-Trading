@@ -86,7 +86,7 @@ class Net(nn.Module):
 
 
 class Agent():
-    def __init__(self, env, epsilon=10, learning_rate=0.0002, GAMMA=0.97, batch_size=32, capacity=10000):
+    def __init__(self, env, epsilon=0, learning_rate=0.0002, GAMMA=0.97, batch_size=32, capacity=10000):
         """
         The agent learning how to control the action of the cart pole.
         Hyperparameters:
@@ -238,8 +238,8 @@ def train(env):
         agent.epsilon += 0.1
         
         if(cnt % 50 ==0):
-            url = "Tables/DDQN"+str(cnt+3850)+".pt"
-            url2 = "Rewards/DDQN_rewards_iter2_new"+str(cnt+3850)+".npy"
+            url = "Tables/DDQN"+str(cnt)+".pt"
+            url2 = "Rewards/DDQN_rewards_iter2_new"+str(cnt)+".npy"
             try:
                 np.save(url2, np.array(rewards))
                 print(".np saved at "+url2)

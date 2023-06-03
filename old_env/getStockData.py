@@ -35,15 +35,15 @@ def get_stock_by_list(year_list, month_list, stock_list):
                     content['data'].extend(content2['data'])
         df = pd.DataFrame(data=content['data'])
         df.head()
-        df.to_csv('stock_data_'+stock_no+'.csv', index=False)
+        df.to_csv('stock_data_'+stock_no+'_new.csv', index=False)
     
     
     return
 
-year = ['2022','2021','2020','2019','2018','2017','2016']
+year = ['2016','2017','2018','2019','2020','2021','2022']
 month =[str(i).zfill(2) for i in range(1,13)]
 #month = ['01','02','03','04','05','06','07','08','09','10','11','12']
-stock_no = ['2330','2454']#,'2317', '2412','6505','2308','2881','2882','2303']
+stock_no = ['2330']#,'2317', '2412','6505','2308','2881','2882','2303']
 
 get_stock_by_list(year, month, stock_no)
 
