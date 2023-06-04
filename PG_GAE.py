@@ -152,7 +152,7 @@ def train(lr=0.001, lr_decay=0.999, gamma=0.999, lambda_ = 0.999):
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     model.to(device)
     
-    #model.load_state_dict(torch.load('./Tables/PG_GAE-0.001-0.999(old).pth'))
+    model.load_state_dict(torch.load('./Tables/PG_GAE-0.001-0.999(10000).pth'))
     
     #scheduler = Scheduler.StepLR(optimizer, step_size=100, gamma=lr_decay)
     
@@ -161,7 +161,7 @@ def train(lr=0.001, lr_decay=0.999, gamma=0.999, lambda_ = 0.999):
     pre_reward = 0
     same_count = 0
     
-    for i_episode in range(10000):
+    for i_episode in range(10000, 20000):
         state = env.reset()
         ep_reward = 0
         t = 0
@@ -194,7 +194,7 @@ def train(lr=0.001, lr_decay=0.999, gamma=0.999, lambda_ = 0.999):
         writer.add_scalar('Episode reward', ep_reward, i_episode)
         writer.add_scalar('Episode profit', env._total_profit, i_episode)
         writer.add_scalar('Episode loss', loss, i_episode)
-
+        """
         if ep_reward == pre_reward:
             same_count += 1
         else:
@@ -204,6 +204,7 @@ def train(lr=0.001, lr_decay=0.999, gamma=0.999, lambda_ = 0.999):
             pre_reward = 0
             same_count = 0
             break
+        """
         if (i_episode - 1) % 100 == 0:
             torch.save(model.state_dict(), './Tables/PG_GAE-{}-{}.pth'.format(lr, lr_decay))
     torch.save(model.state_dict(), './Tables/PG_GAE-{}-{}.pth'.format(lr, lr_decay))
