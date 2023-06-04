@@ -52,7 +52,7 @@ def my_calculate_reward(self, action):
     '''
 
     step_reward = 0
-    """
+    
     trade = False
     if ((action == Actions.Buy.value and self._position == Positions.Short) or
         (action == Actions.Sell.value and self._position == Positions.Long)):
@@ -74,7 +74,7 @@ def my_calculate_reward(self, action):
     if action == Actions.Buy.value and self._current_tick!= self._end_tick:
         return self.prices[self._current_tick+1] - self.prices[self._current_tick]
     return 0
-    
+    """
 
 
 class MyStocksEnv(StocksEnv):
