@@ -17,7 +17,7 @@ os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
 os.environ["CUDA_VISIBLE_DEVICES"] = '3'
 
 class Parser(utils.Parser):
-    dataset: str = 'TT_stock_2330_50'
+    dataset: str = 'DDQN_1_2330'
     config: str = 'config.offline'
 
 tb_save_path = 'tb_record_1'

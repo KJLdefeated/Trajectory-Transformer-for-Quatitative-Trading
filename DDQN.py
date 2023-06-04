@@ -86,7 +86,7 @@ class Net(nn.Module):
 
 
 class Agent():
-    def __init__(self, env, epsilon=10, learning_rate=0.0002, GAMMA=0.97, batch_size=32, capacity=10000):
+    def __init__(self, env, epsilon=0, learning_rate=0.0002, GAMMA=0.97, batch_size=32, capacity=10000):
         """
         The agent learning how to control the action of the cart pole.
         Hyperparameters:
@@ -114,10 +114,7 @@ class Agent():
 
     def learn(self):
         '''
-        - Implement the learning function.
-        - Here are the hints to implement.
         Steps:
-        -----
         1. Update target net by current net every 100 times. (we have done this for you)
         2. Sample trajectories of batch size from the replay buffer.
         3. Forward the data to the evaluate net and the target net.
@@ -125,77 +122,47 @@ class Agent():
         5. Zero-out the gradients.
         6. Backpropagation.
         7. Optimize the loss function.
-        -----
-        Parameters:
-            self: the agent itself.
-            (Don't pass additional parameters to the function.)
-            (All you need have been initialized in the constructor.)
-        Returns:
-            None (Don't need to return anything)
         '''
         if self.count % 10 == 0:
             self.target_net.load_state_dict(self.evaluate_net.state_dict())
-
-        # Begin your code
-        # TODO
-        # Step2: Sample the data stored in the buffer and store them into data type Tensor 
         states, actions, rewards, next_states, dones = self.buffer.sample(self.batch_size)
         states = torch.tensor(np.array(states), dtype=torch.float)
         actions = torch.tensor(np.array(actions), dtype=torch.int64).unsqueeze(-1)
         rewards = torch.tensor(np.array(rewards), dtype=torch.float)
         next_states = torch.tensor(np.array(next_states), dtype=torch.float)
         dones = torch.tensor(np.array(dones), dtype=torch.float)
-
-        # Step3: Forward the data to the evaluate net and the target net with a few adjustment of the size
         
         q_values = torch.gather(self.evaluate_net(states), 1, actions)
         
         next_actions = self.evaluate_net(next_states).argmax(dim=1, keepdim=True)
         next_q_values = self.target_net(next_states).gather(1, next_actions).reshape(32)
         target_q_values = (rewards + self.gamma * (1 - dones) * next_q_values).unsqueeze(1)
-        # Step4: Compute the loss with MSE.
+
         loss = F.mse_loss(q_values, target_q_values)
         
-        # Step5: Zero-out the gradients.
         self.optimizer.zero_grad()
 
-        # Step6: Backpropagation.
         loss.backward()
-        # Step7: Optimize the loss function.
+
         self.optimizer.step()
         
-            
-        # End your code
         
 
 
     def choose_action(self, state):
-
         with torch.no_grad():
-            # Begin your code
-            # TODO
             temp = np.random.random()
             if temp < math.exp(-1*self.epsilon) or temp<0.005:
                 return np.random.randint(self.n_actions)
-            # forward the state to nn and find the argmax of the actions
-            
             action = torch.argmax(self.evaluate_net(Tensor(state).reshape(48))).item()
-            # End your code
         return action
 
 
 def train(env):
-    """
-    Train the agent on the given environment.
-    Paramenters:
-        env: the given environment.
-    Returns:
-        None (Don't need to return anything)
-    """
     agent = Agent(env)
     #agent.target_net.load_state_dict(torch.load("/content/drive/My Drive/Colab/RL_for_Quatitatitive_Trading/Tables/DDQN3850.pt"))
     #agent.evaluate_net.load_state_dict(torch.load("/content/drive/My Drive/Colab/RL_for_Quatitatitive_Trading/Tables/DDQN3850.pt"))
-    episode = 150
+    episode = 1000
     rewards = []
     cnt = 0
     for _ in tqdm(range(episode)):
@@ -237,12 +204,11 @@ def train(env):
             state = next_state
         agent.epsilon += 0.1
         
-        if(cnt % 50 ==0):
-            url = "Tables/DDQN"+str(cnt+3850)+".pt"
-            url2 = "Rewards/DDQN_rewards_iter2_new"+str(cnt+3850)+".npy"
+        if(cnt % 999 ==0):
+            url = "Tables/DDQN.pt"
+            url2 = "Rewards/DDQN_rewards.npy"
             try:
                 np.save(url2, np.array(rewards))
-                print(".np saved at "+url2)
             except RuntimeError:
                 print("!!")  
             try:
@@ -276,7 +242,7 @@ def test(env):
             state = next_state.reshape(48)
     print(env._total_profit)
     print(env._total_reward)
-    env.render_all()
+    env.render()
     env.save_rendering('Images/DDQN.png')
 
 def state_preprocess(state):
@@ -292,8 +258,9 @@ def gen_offline_data(episodes, env):
     episode_data = {}
     for k in ['observations', 'next_observations', 'actions', 'rewards', 'terminals']:
         episode_data[k] = []
-    for _ in range(episodes):
+    for e in range(episodes):
         observation = env.reset()
+        env.seed(e)
         observation = state_preprocess(observation.reshape(-1))
         while True:
             Q = agent.target_net.forward(torch.FloatTensor(observation)).squeeze(0).detach()
@@ -316,10 +283,10 @@ if __name__ == "__main__":
     os.makedirs("./Tables", exist_ok=True)
     os.makedirs("./Rewards", exist_ok=True)
     # training section:
-    for i in range(1):
+    for i in range(5):
         print(f"#{i + 1} training progress")
         #with tf.device('/device:GPU:0'):
-        #train(env)
+        train(env)
         
     # testing section:
     test(env)
