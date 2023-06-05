@@ -115,7 +115,7 @@ def state_preprocess(state):
             tempstate[i*4+j] = (state[44+j] - state[i*4+j])/state[44+j]
     return tempstate
 
-def createEnv(stock_no, window_size = 12, frame_bounds = (12, 1200)):
+def createEnv(stock_no, window_size = 12, frame_bounds = (12, 1000)):
     csv_name = './dataset/stock_data_' + str(stock_no) + '.csv'
     data = pd.read_csv(csv_name)
     read_df = pd.DataFrame(data)
