@@ -9,6 +9,7 @@ from torch import Tensor
 import os
 from tqdm import tqdm
 import buildEnv
+import buildEnv_original
 import math
 import math
 total_rewards = []
@@ -108,7 +109,9 @@ class Agent():
 
         self.buffer = replay_buffer(self.capacity)
         self.evaluate_net = Net(self.n_actions)  # the evaluate network
+        self.evaluate_net = self.evaluate_net.to('cuda')
         self.target_net = Net(self.n_actions)  # the target network
+        self.target_net = self.target_net.to('cuda')
         self.optimizer = torch.optim.Adam(
             self.evaluate_net.parameters(), lr=self.learning_rate)  # Adam is a method using to optimize the neural network
 
@@ -126,11 +129,11 @@ class Agent():
         if self.count % 10 == 0:
             self.target_net.load_state_dict(self.evaluate_net.state_dict())
         states, actions, rewards, next_states, dones = self.buffer.sample(self.batch_size)
-        states = torch.tensor(np.array(states), dtype=torch.float)
-        actions = torch.tensor(np.array(actions), dtype=torch.int64).unsqueeze(-1)
-        rewards = torch.tensor(np.array(rewards), dtype=torch.float)
-        next_states = torch.tensor(np.array(next_states), dtype=torch.float)
-        dones = torch.tensor(np.array(dones), dtype=torch.float)
+        states = torch.tensor(np.array(states), dtype=torch.float).to('cuda')
+        actions = torch.tensor(np.array(actions), dtype=torch.int64).unsqueeze(-1).to('cuda')
+        rewards = torch.tensor(np.array(rewards), dtype=torch.float).to('cuda')
+        next_states = torch.tensor(np.array(next_states), dtype=torch.float).to('cuda')
+        dones = torch.tensor(np.array(dones), dtype=torch.float).to('cuda')
         
         q_values = torch.gather(self.evaluate_net(states), 1, actions)
         
@@ -154,18 +157,16 @@ class Agent():
             temp = np.random.random()
             if temp < math.exp(-1*self.epsilon) or temp<0.005:
                 return np.random.randint(self.n_actions)
-            action = torch.argmax(self.evaluate_net(Tensor(state).reshape(48))).item()
+            action = torch.argmax(self.evaluate_net(Tensor(state).reshape(48).to('cuda'))).item()
         return action
 
 
 def train(env):
     agent = Agent(env)
-    #agent.target_net.load_state_dict(torch.load("/content/drive/My Drive/Colab/RL_for_Quatitatitive_Trading/Tables/DDQN3850.pt"))
-    #agent.evaluate_net.load_state_dict(torch.load("/content/drive/My Drive/Colab/RL_for_Quatitatitive_Trading/Tables/DDQN3850.pt"))
     episode = 1000
     rewards = []
     cnt = 0
-    for _ in tqdm(range(episode)):
+    for e in range(episode):
         cnt += 1
         state = env.reset()
         #print(state)
@@ -202,11 +203,12 @@ def train(env):
                 #print(agent.env._total_profit)
                 break
             state = next_state
+        print(e, env._total_reward, env._total_profit)
         agent.epsilon += 0.1
         
         if(cnt % 999 ==0):
-            url = "Tables/DDQN.pt"
-            url2 = "Rewards/DDQN_rewards.npy"
+            url = "Tables/DDQN_oo.pt"
+            url2 = "Rewards/DDQN_rewards_oor.npy"
             try:
                 np.save(url2, np.array(rewards))
             except RuntimeError:
@@ -263,8 +265,8 @@ def gen_offline_data(episodes, env):
         env.seed(e)
         observation = state_preprocess(observation.reshape(-1))
         while True:
-            Q = agent.target_net.forward(torch.FloatTensor(observation)).squeeze(0).detach()
-            action = int(torch.argmax(Q).numpy())
+            Q = agent.target_net.forward(torch.FloatTensor(observation).to('cuda')).squeeze(0).cpu().detach()
+            action = int(torch.argmax(Q))
             next_observation, reward, done, info = env.step(action)
             episode_data['observations'].append(np.array(observation))
             next_observation = state_preprocess(next_observation.reshape(-1))
@@ -279,14 +281,12 @@ def gen_offline_data(episodes, env):
     return episode_data
 
 if __name__ == "__main__":
-    env = buildEnv.createEnv(2330, frame_bounds=(1200,1700))        
+    env = buildEnv_original.createEnv(2330, frame_bounds=(12,1000))        
     os.makedirs("./Tables", exist_ok=True)
     os.makedirs("./Rewards", exist_ok=True)
     # training section:
-    for i in range(5):
-        print(f"#{i + 1} training progress")
-        #with tf.device('/device:GPU:0'):
-        train(env)
+    
+    train(env)
         
     # testing section:
     test(env)

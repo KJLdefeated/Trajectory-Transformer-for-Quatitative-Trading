@@ -3,7 +3,7 @@ from buildEnv import createEnv
 import numpy as np
 import pickle
 
-episodes = 1
+episodes = 10
 stock = 2330
 env = createEnv(2330)
 

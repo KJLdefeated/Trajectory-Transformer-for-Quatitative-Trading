@@ -17,7 +17,7 @@ os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
 os.environ["CUDA_VISIBLE_DEVICES"] = '3'
 
 class Parser(utils.Parser):
-    dataset: str = 'DDQN_1_2330'
+    dataset: str = 'DDQN_10_2330'
     config: str = 'config.offline'
 
 tb_save_path = 'tb_record_1'
@@ -92,8 +92,8 @@ trainer_config = utils.Config(
 
 trainer = trainer_config()
 
-n_epochs = 100
-save_freq = 10
+n_epochs = 600
+save_freq = 50
 
 train_loss_writer = SummaryWriter(tb_save_path + '/train_loss/TT/' + args.dataset)
 for epoch in range(1, n_epochs+1):

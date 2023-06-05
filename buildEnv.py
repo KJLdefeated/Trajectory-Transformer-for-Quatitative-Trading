@@ -51,9 +51,8 @@ def my_calculate_reward(self, action):
     return step_reward
     '''
 
-    step_reward = 0
     
-    trade = False
+    '''trade = False
     if ((action == Actions.Buy.value and self._position == Positions.Short) or
         (action == Actions.Sell.value and self._position == Positions.Long)):
         trade = True
@@ -67,15 +66,14 @@ def my_calculate_reward(self, action):
             step_reward += price_diff
 
     return step_reward
-
-    """
+'''
+    
     if action == Actions.Sell.value and self._current_tick!= self._end_tick:
         return self.prices[self._current_tick] - self.prices[self._current_tick+1]
     if action == Actions.Buy.value and self._current_tick!= self._end_tick:
         return self.prices[self._current_tick+1] - self.prices[self._current_tick]
     return 0
-    """
-
+    
 
 class MyStocksEnv(StocksEnv):
     _process_data = my_process_data
@@ -115,7 +113,7 @@ def state_preprocess(state):
             tempstate[i*4+j] = (state[44+j] - state[i*4+j])/state[44+j]
     return tempstate
 
-def createEnv(stock_no, window_size = 12, frame_bounds = (12, 1200)):
+def createEnv(stock_no, window_size = 12, frame_bounds = (12, 1000)):
     csv_name = './dataset/stock_data_' + str(stock_no) + '.csv'
     data = pd.read_csv(csv_name)
     read_df = pd.DataFrame(data)
