@@ -244,7 +244,7 @@ def test(env):
     """
     rewards = []
     testing_agent = Agent(env)
-    #testing_agent.target_net.load_state_dict(torch.load("Tables/DQN2850.pt"))
+    testing_agent.target_net.load_state_dict(torch.load("Tables/DQN.pt"))
     for _ in range(1):
         state = env.reset().reshape(48)
         while True:
@@ -269,13 +269,13 @@ if __name__ == "__main__":
     os.makedirs("./Tables", exist_ok=True)
 
     # training section:
-    for i in range(2):
+    for i in range(1):
         print(f"#{i + 1} training progress")
         train(env)
 
     # testing section:
-    test(env)
+    #test(env)
     env.close()
 
-    os.makedirs("./Rewards", exist_ok=True)
+    #os.makedirs("./Rewards", exist_ok=True)
     np.save("./Rewards/DQN_rewards.npy", np.array(total_rewards))
