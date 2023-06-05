@@ -9,7 +9,6 @@ from torch import Tensor
 import os
 from tqdm import tqdm
 import buildEnv
-import buildEnv_original
 import math
 import math
 from torch.utils.tensorboard import SummaryWriter
@@ -286,7 +285,7 @@ def gen_offline_data(episodes, env):
     return episode_data
 
 if __name__ == "__main__":
-    env = buildEnv_original.createEnv(2330, frame_bounds=(12,1000))        
+    env = buildEnv.createEnv(2330, frame_bounds=(12,1000))        
     os.makedirs("./Tables", exist_ok=True)
     os.makedirs("./Rewards", exist_ok=True)
     # training section:
