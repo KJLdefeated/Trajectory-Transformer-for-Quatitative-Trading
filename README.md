@@ -27,6 +27,7 @@ Unlike other trading environment, we only have two actions, **0=Sell** and **1=B
 In various algorithms, we examined different approaches for calculating rewards. After testing, we identified two distinct reward calculation methods. One of these methods was selected for integration within the Reinforce algorithm, while the other was employed in DQN、DDQN、TT.
     - First way (for DQN、DDQN、TT)
 $p_t$ is the stock price at $t$ time step. $p_{t+1}$ means stock price of next time step.
+
 $$
 R1(t,a) = 
 \begin{cases}
@@ -34,6 +35,7 @@ R1(t,a) =
   p_{t+1} - p_t, & \text{if buy}
 \end{cases}
 $$
+
 This reward simply calculates the price difference, and doesn't care about whether the you are in long or short position. It's derived from the idea that whenever the price rises you should buy and vice versa.
     - Second way (for Reinforce)
 $$
@@ -43,12 +45,15 @@ R2(t,a) =
   0, & \text{otherwise}
 \end{cases}
 $$
+
 This reward is calculated bases on the actual profit you will get. When you sell and you have stock at that time, your reward is the price difference of current price and the price you bought before.
 - Profit
 The environment starts with initial fund 1, and everytime you trade, the fund becomes:
+
 $$
 fund(t)=fund(t-1)*(p_t/p_{buy})
 $$
+
 The final fund is our profit.
 - Trade fee
 Due to high trading frequency, we disable the trade fee for simplicity in our environment.
@@ -58,11 +63,11 @@ Dataset is web-crawled from [證券交易所](https://www.twse.com.tw/zh/index.h
 Due to high trading frequency, we disable the 2 trading fees for simplicity.
 - Training Data:
     - Maximum Possible Profit: 251.61
-    - ![](https://hackmd.io/_uploads/r19uuxj83.png)
+    - ![](https://imgur.com/6xf9YvK.png)
 
 - Testing Data:
     - Maximum Possible Profit: 31.38
-    - ![](https://hackmd.io/_uploads/rkzFOxsUh.png)
+    - ![](https://imgur.com/6xf9YvK.png)
 
 ### Baseline
 #### Moving average crossover method
@@ -83,10 +88,12 @@ If 2 is greater than 1 -> indicates the stock is doing bad recently -> sell
     - Generalization
 - method
     - calculate relative change for previous datas
+
 $$
 change_{relative} = (data_{now} - data_{previous}) / data_{now}
 $$
-```javascript=
+
+```python=
 for i in range(12):
     for j in range(4):
         tempstate[i*4+j] = (state[44+j] - state[4*i+j])/state[44+j]
@@ -99,20 +106,24 @@ The Reinforce algorithm includes collecting trajectories, computing the policy g
 #### DQN
 - Inroduction
 DQNs work by using a neural network to approximate the action-value function, which maps states of the environment to the expected return for each possible action. The goal of the DQN is to learn the optimal policy, which is the action that will maximize the expected return for each state.
+
 $$
 \\
 Q_{evaluate}(s_t,a) = Q(s,a) + a(r + \gamma maxQ(s_{t+1},a) - Q(s,a))
 \\
 Target Q = r + \gamma maxQ(s_{t+1},a)
 $$
+
 #### DDQN
 - introduction
 DDQN is an extension of the DQN algorithm. In DQN, the Q-values are often overestimated, and DDQN is used to address this issue. By using a separate target network and decoupling the action selection and value estimation steps, DDQN reduces the overestimation bias observed in DQN and leads to more accurate Q-value estimates. This, in turn, can result in improved performance and faster convergence in reinforcement learning tasks.
+
 $$
 \\
 Q_{evaluate}(s_t,a) = Reward_{t+1} + \gamma Q_{target}(s_{t+1}, \max_a(Q_{evaluate}(s_{t+1}, a)))
 \\
 $$
+
 #### Trajectory Transformer (TT)
 - Offline algorithm
 - Introduction
@@ -122,6 +133,7 @@ TT is a Transformer decoder mirroring the GPT architecture. TT use a smaller arc
 - Training
 The traning process is like the picture above. We use precollected trajectory datas and separate $(s_1, a_1, r_1, s_2, a_2, ..., s_t, a_t, r_t, ...)$ tuple to $(s_1, s_2, ..., s_t, a_1, a_2, ..., a_t, r_t...)$ $t=1,...,T$
 Training is performed with the standard teacher-forcing procedure used to train sequence models. Denoting the parameters of the Trajectory Transformer as $\theta$ and induced conditional probabilities as $P_\theta$, the objective maximized during training is:
+
 $$
 {\cal{L}}(\bar{\tau})=\sum_{t=0}^{T-1}(
     \sum_{i=0}^{N-1}logP_{\theta}(\bar{s}_{t}^{i}|\bar{s}_{t}^{<i},\bar{\tau}_{<t}) + 
@@ -129,8 +141,10 @@ $$
     logP_{\theta}(\bar{r}_{t}|\bar{a}_{t}^{<i},\bar{s}_t,\bar{\tau}_{<t})
 )
 $$
+
 - Planning
 Beam search is a search algorithm that can be used to find the most likely sequence of tokens given a probability distribution over sequences. In the context of trajectory transformer, beam search is used to find the most likely trajectory given a model that predicts the probability of a sequence of states and actions.
+
 $$
 trajectory = (s_1, a_1, r_1, R_1, s_2, a_2, r_2, R_2, ,...,s_t, a_t, r_t, R_t, s_{t+1}) \\
 a_{t+1} = TT_{\theta}(trajectory)
