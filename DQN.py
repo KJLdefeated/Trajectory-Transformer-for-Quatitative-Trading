@@ -150,15 +150,24 @@ class Agent:
         actions = torch.tensor(np.array(actions), dtype=torch.int64).unsqueeze(-1)
         rewards = torch.tensor(np.array(rewards), dtype=torch.float)
         next_states = torch.tensor(np.array(next_states), dtype=torch.float)
-        dones = torch.tensor(np.array(dones), dtype=torch.float)
-        
-        q_values = torch.gather(self.evaluate_net(states), 1, actions)
-        
-        next_actions = self.evaluate_net(next_states).argmax(dim=1, keepdim=True)
-        next_q_values = self.target_net(next_states).gather(1, next_actions).reshape(32)
-        target_q_values = (rewards + self.gamma * (1 - dones) * next_q_values).unsqueeze(1)
+        done = torch.tensor(np.array(dones), dtype=torch.float)
 
-        loss = F.mse_loss(q_values, target_q_values)
+        """
+        Forward the data to evaluate net and target net.
+        q_eval is predicted values from evaluate network which is extracted based on action.
+        q_next is actual values from target network. 
+        q_target is the expected Q-values obtained from the formula "reward + gamma * max(q_next)".
+        """
+        q_eval = self.evaluate_net(states).gather(1, actions)
+        q_next = self.target_net(next_states).detach() * (1 - done).unsqueeze(-1)
+        q_target = rewards.unsqueeze(-1) + self.gamma * q_next.max(1)[0].view(self.batch_size, 1)
+
+        """
+        Compute the loss of "q_eval" and "q_target" with nn.MSELoss().
+        """
+        loss_func = nn.MSELoss()
+        loss = loss_func(q_eval, q_target)
+        
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
@@ -201,7 +210,7 @@ def train(env):
         None (Don't need to return anything)
     """
     agent = Agent(env)
-    episode = 500
+    episode = 1000
     rewards = []
     for i_episode in range(episode):
         state = env.reset()
@@ -244,7 +253,7 @@ def test(env):
     """
     rewards = []
     testing_agent = Agent(env)
-    #testing_agent.target_net.load_state_dict(torch.load("Tables/DQN2850.pt"))
+    testing_agent.target_net.load_state_dict(torch.load("Tables/DQN.pt"))
     for _ in range(1):
         state = env.reset().reshape(48)
         while True:
@@ -269,13 +278,13 @@ if __name__ == "__main__":
     os.makedirs("./Tables", exist_ok=True)
 
     # training section:
-    for i in range(2):
+    for i in range(1):
         print(f"#{i + 1} training progress")
         train(env)
 
     # testing section:
-    test(env)
+    #test(env)
     env.close()
 
-    os.makedirs("./Rewards", exist_ok=True)
+    #os.makedirs("./Rewards", exist_ok=True)
     np.save("./Rewards/DQN_rewards.npy", np.array(total_rewards))
