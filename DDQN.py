@@ -12,6 +12,7 @@ import buildEnv
 import buildEnv_original
 import math
 import math
+from torch.utils.tensorboard import SummaryWriter
 total_rewards = []
 
 
@@ -226,26 +227,30 @@ def test(env):
     Returns:
         None (Don't need to return anything)
     """
+    w = SummaryWriter('tb_record_1/comp_profit_train/DDQN')
     testing_agent = Agent(env)
     testing_agent.target_net.load_state_dict(torch.load("Tables/DDQN.pt"))
     for _ in range(1):
         state = env.reset().reshape(48)
+        t = 0
         while True:
             tempstate = state
             for i in range(12):
                 for j in range(4):
                     tempstate[i*4+j] = (state[44+j] - state[i*4+j])/state[44+j]
             Q = testing_agent.target_net(
-                torch.FloatTensor(tempstate.reshape(48))).squeeze(0).detach()
+                torch.FloatTensor(tempstate.reshape(48)).to('cuda')).squeeze(0).cpu().detach()
             action = int(torch.argmax(Q).numpy())
             next_state, _, done, _ = env.step(action)
+            w.add_scalar('Profit', env._total_profit, t)
+            t+=1
             if done:
                 break
             state = next_state.reshape(48)
     print(env._total_profit)
     print(env._total_reward)
-    env.render()
-    env.save_rendering('Images/DDQN.png')
+    #env.render()
+    #env.save_rendering('Images/DDQN.png')
 
 def state_preprocess(state):
     tempstate = state
@@ -286,9 +291,9 @@ if __name__ == "__main__":
     os.makedirs("./Rewards", exist_ok=True)
     # training section:
     
-    train(env)
+    #train(env)
         
     # testing section:
     test(env)
-    env.close()
+    #env.close()
     #np.save("./Rewards/DDQN_rewards.npy", np.array(total_rewards))

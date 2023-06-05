@@ -12,6 +12,7 @@ import torch.optim.lr_scheduler as Scheduler
 import buildEnv
 from torch import Tensor
 from torch.utils.tensorboard import SummaryWriter
+from buildEnv import state_preprocess
 
 # Define a useful tuple (optional)
 SavedAction = namedtuple('SavedAction', ['log_prob', 'value'])
@@ -212,38 +213,33 @@ def train(lr=0.001, lr_decay=0.999, gamma=0.999, lambda_ = 0.999):
     return -ewma_reward
    
 
-
 def test(n_episodes=10):
-    env = buildEnv.createEnv(2330)
+    w = SummaryWriter('tb_record_1/comp_profit_train/REINFORCE')
+    env = buildEnv.createEnv(2330, frame_bounds=(12, 1000))
     model = Policy()
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     model.to(device)
     
-    model.load_state_dict(torch.load('./Tables/PG_GAE-{}-{}.pth'.format(0.001, 0.999)))
+    model.load_state_dict(torch.load('./Tables/PG_GAE.pth'))
     
     render = True
     max_episode_len = 10000
-    
-    for i_episode in range(1, n_episodes+1):
-        state = env.reset()
-        running_reward = 0
-        for t in range(max_episode_len+1):
-            action = model.select_action(state)
-            state, reward, done, _ = env.step(action)
-            running_reward += reward
-            if render:
-                env.render()
-            if done:
-                break
-        print('Episode {}\tReward: {}\tProfit: {}'.format(i_episode, running_reward, env._total_profit))
+    state = env.reset()
+    for t in range(max_episode_len+1):
+        action = model.select_action(state)
+        state, reward, done, info = env.step(action)
+        w.add_scalar('Profit', env._total_profit, t)
+        if done:
+            break
+    print('Reward: {}\tProfit: {}'.format(env._total_reward, env._total_profit))
     env.close()
     
 
 if __name__ == '__main__':
     #lr = 0.001
-    #env = buildEnv.createEnv(2330)
+    env = buildEnv.createEnv(2330)
     
     #env.seed(random_seed)  
     #torch.manual_seed(random_seed)  
-    train()
+    #train()
     test()

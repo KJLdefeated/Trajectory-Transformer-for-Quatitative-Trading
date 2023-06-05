@@ -1,7 +1,7 @@
 import buildEnv
 import os
 import numpy as np
-
+from torch.utils.tensorboard import SummaryWriter
 
 
 
@@ -26,11 +26,14 @@ def test(env):
     env.reset()                                 
     count1 = 0                                  # count the action buy
     count0 = 0                                  # count the action sell
-    
+    w = SummaryWriter('tb_record_1/comp_profit_train/baseline')
+    t = 0
     while True:
         if count<200:                           # skip to 201 th day
             env.step(0)
             count = count+1
+            w.add_scalar('Profit', env._total_profit, t)
+            t+=1
             continue
         # use the Moving Average Crossover method to decide whether to buy or not
         if average50[count-200+150] > average200[count-200]:
@@ -41,6 +44,8 @@ def test(env):
             count0 += 1
 
         next_state, _, done, _ = env.step(action)
+        w.add_scalar('Profit', env._total_profit, t)
+        t+=1
         
         count = count + 1
         if done:
@@ -54,5 +59,5 @@ def test(env):
 
 
 if __name__ == "__main__":
-    env = buildEnv.createEnv(2303,window_size=0, frame_bounds=(1200,1700))        
+    env = buildEnv.createEnv(2330, frame_bounds=(12,1000))        
     test(env)

@@ -107,6 +107,7 @@ class MyStocksEnv(StocksEnv):
 
 
 def state_preprocess(state):
+    state = state.reshape(-1)
     tempstate = state
     for i in range(12):
         for j in range(4):

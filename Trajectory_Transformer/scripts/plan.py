@@ -22,11 +22,11 @@ from trajectory.search import (
     update_context,
 )
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-os.environ["CUDA_VISIBLE_DEVICES"] = '2'
+os.environ["CUDA_VISIBLE_DEVICES"] = '3'
 
 
 class Parser(utils.Parser):
-    dataset: str = 'DDQN_1_2330'
+    dataset: str = 'DDQN_10_2330'
     config: str = 'config.offline'
 
 #######################
@@ -72,9 +72,9 @@ value_fn = lambda x: discretizer.value_fn(x, args.percentile)
 #######################
 ###### main loop ######
 #######################
-
-for test_ep in [100]:
-    env = createEnv(code)
+w = SummaryWriter('tb_record_1/comp_profit/TT')
+for test_ep in [500]:
+    env = createEnv(code, frame_bounds=(1000, 1500))
     env.seed(test_ep)
     observation = env.reset()
     observation = observation.reshape(-1)
@@ -121,7 +121,7 @@ for test_ep in [100]:
         
         ## execute action in environment
         next_observation, reward, terminal, info = env.step(np.argmax(action))
-
+        w.add_scalar('Profit', env._total_profit, t)
         ## update return
         total_reward += reward
         #score = env.get_normalized_score(total_reward)
@@ -144,8 +144,8 @@ for test_ep in [100]:
         observation = next_observation
 
     ## Show result
-    env.render_all()
-    env.save_rendering('Images/TT_' + args.dataset + '_{}.png'.format(test_ep))
+    #env.render_all()
+    #env.save_rendering('Images/TT_' + args.dataset + '_{}.png'.format(test_ep))
     ## save result as a json file
     json_path = join(args.savepath, 'rollout.json')
     json_data = {'step': t, 'return': total_reward, 'term': terminal, 'gpt_epoch': gpt_epoch}

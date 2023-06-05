@@ -92,7 +92,7 @@ trainer_config = utils.Config(
 
 trainer = trainer_config()
 
-n_epochs = 600
+n_epochs = 500
 save_freq = 50
 
 train_loss_writer = SummaryWriter(tb_save_path + '/train_loss/TT/' + args.dataset)

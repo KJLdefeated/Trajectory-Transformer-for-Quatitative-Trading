@@ -10,6 +10,7 @@ import os
 from tqdm import tqdm
 import buildEnv
 import math
+from torch.utils.tensorboard import SummaryWriter
 total_rewards = []
 
 
@@ -254,8 +255,10 @@ def test(env):
     rewards = []
     testing_agent = Agent(env)
     testing_agent.target_net.load_state_dict(torch.load("Tables/DQN.pt"))
+    w = SummaryWriter('tb_record_1/comp_profit_train/DQN')
     for _ in range(1):
         state = env.reset().reshape(48)
+        t = 0
         while True:
             tempstate = state
             for i in range(12):
@@ -264,27 +267,29 @@ def test(env):
             Q = testing_agent.target_net(
                 torch.FloatTensor(tempstate.reshape(48))).squeeze(0).detach()
             action = int(torch.argmax(Q).numpy())
-            next_state, _, done, _ = env.step(action)
+            next_state, _, done, info = env.step(action)
+            w.add_scalar('Profit', env._total_profit, t)
+            t+=1
             if done:
+                print(info)
                 break
             state = next_state.reshape(48)
 
-    print(f"reward: {np.mean(rewards)}")
-    print(f"max Q:{testing_agent.check_max_Q()}")
+    
 
 
 if __name__ == "__main__":
-    env = buildEnv.createEnv(2330) 
-    os.makedirs("./Tables", exist_ok=True)
+    env = buildEnv.createEnv(2330, frame_bounds=(12, 1000)) 
+    #os.makedirs("./Tables", exist_ok=True)
 
     # training section:
-    for i in range(1):
-        print(f"#{i + 1} training progress")
-        train(env)
+    #for i in range(1):
+    #    print(f"#{i + 1} training progress")
+    #    train(env)
 
     # testing section:
-    #test(env)
-    env.close()
+    test(env)
+    #env.close()
 
     #os.makedirs("./Rewards", exist_ok=True)
-    np.save("./Rewards/DQN_rewards.npy", np.array(total_rewards))
+    #np.save("./Rewards/DQN_rewards.npy", np.array(total_rewards))
